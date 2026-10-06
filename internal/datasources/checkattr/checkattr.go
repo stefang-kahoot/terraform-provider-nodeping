@@ -1,10 +1,19 @@
-// Package checkattr holds the attribute surface shared by the nodeping_check
-// and nodeping_checks data sources, so the two cannot drift apart.
+// Package checkattr holds the read-back shape of a check, shared by the
+// nodeping_check and nodeping_checks data sources and by the nodeping_check
+// resource, so the three cannot drift apart.
+//
+// Attributes() and the schema half serve the data sources. FromAPI and the
+// Model serve all three: the resource copies the fields it shares onto its own
+// model rather than keeping a second mapping. It once did keep one, and the
+// drift between the two copies is what left ten check parameters unmapped on
+// the resource -- invisibly, since an unmapped attribute reads back null and
+// so produces no plan.
 //
 // Credentials are deliberately absent. `password` is a stored secret (and is
 // marked sensitive on the resource) and `snmpcom` is an SNMP community string,
 // which is a shared secret in all but name. A data source exists to be read,
-// and its values land in state and in plan output, so neither belongs here.
+// and its values land in state and in plan output, so neither belongs here;
+// the resource carries both itself and restores them from configuration.
 // `sshkey` and `clientcert` are included because the API returns NodePing's
 // *identifiers* for stored keys, not the key material itself.
 package checkattr

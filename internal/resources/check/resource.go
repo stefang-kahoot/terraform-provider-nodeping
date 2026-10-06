@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"github.com/nodeping/terraform-provider-nodeping/internal/client"
+	"github.com/nodeping/terraform-provider-nodeping/internal/datasources/checkattr"
 )
 
 var (
@@ -85,7 +86,10 @@ func (r *CheckResource) Create(ctx context.Context, req resource.CreateRequest, 
 	plannedTagsAll := plan.TagsAll
 	plannedPassword := plan.Password
 
-	r.mapCheckToModel(ctx, check, &plan)
+	r.mapCheckToModel(ctx, check, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	preservePassword(&plan, plannedPassword)
 
 	// Restore original target if it's semantically equivalent (trailing slash difference)
@@ -138,7 +142,10 @@ func (r *CheckResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	originalTarget := state.Target
 	statePassword := state.Password
 
-	r.mapCheckToModel(ctx, check, &state)
+	r.mapCheckToModel(ctx, check, &state, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	preservePassword(&state, statePassword)
 
 	// Restore original target if it's semantically equivalent (trailing slash difference)
@@ -188,7 +195,10 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	plannedTagsAll := plan.TagsAll
 	plannedPassword := plan.Password
 
-	r.mapCheckToModel(ctx, check, &plan)
+	r.mapCheckToModel(ctx, check, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	preservePassword(&plan, plannedPassword)
 
 	// Restore original target if it's semantically equivalent (trailing slash difference)
@@ -292,7 +302,10 @@ func (r *CheckResource) ImportState(ctx context.Context, req resource.ImportStat
 	}
 
 	var state CheckResourceModel
-	r.mapCheckToModel(ctx, check, &state)
+	r.mapCheckToModel(ctx, check, &state, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	// mapCheckToModel only fills tags_all, because on a refresh tags belongs to
 	// the configuration. An import has no configuration to read, so reconstruct
@@ -626,255 +639,130 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 	return req
 }
 
-func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check, model *CheckResourceModel) {
-	model.ID = types.StringValue(check.ID)
-	model.CustomerID = types.StringValue(check.CustomerID)
-	model.Type = types.StringValue(check.Type)
-	model.Label = types.StringValue(check.Label)
+// mapCheckToModel writes an API response onto the resource model.
+//
+// The mapping itself lives in checkattr, which both check data sources also
+// use, so the resource and the data sources cannot end up disagreeing about
+// what a check looks like. A second copy used to live here, and the drift
+// between the two is what left `database`, `query`, `secure`, `email`,
+// `postdata`, `transport`, `dnssection`, `namespace`, `homeloc` and `snmpv`
+// unmapped on the resource -- silently, because an unmapped attribute reads
+// back null and produces no plan.
+//
+// What remains below is only what a resource needs and a data source does
+// not: a plan to stay consistent with, and credentials the API does not echo.
+func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check, model *CheckResourceModel, diags *diag.Diagnostics) {
+	a := checkattr.FromAPI(ctx, check, diags)
 
-	if check.Enabled == "active" {
-		model.Enabled = types.BoolValue(true)
-	} else {
-		model.Enabled = types.BoolValue(false)
-	}
+	model.ID = a.ID
+	model.CustomerID = a.CustomerID
+	model.Type = a.Type
+	model.Target = a.Target
+	model.Label = a.Label
+	model.Enabled = a.Enabled
+	model.Public = a.Public
+	model.Mute = a.Mute
+	model.AutoDiag = a.AutoDiag
+	model.Dep = a.Dep
+	model.State = a.State
+	model.Created = a.Created
+	model.Modified = a.Modified
+	model.Description = a.Description
+	model.RunLocations = a.RunLocations
+	model.HomeLoc = a.HomeLoc
 
-	model.Public = types.BoolValue(check.Public)
-	model.AutoDiag = types.BoolValue(check.AutoDiag)
+	model.ContentString = a.ContentString
+	model.Regex = a.Regex
+	model.Invert = a.Invert
+	model.Follow = a.Follow
+	model.Method = a.Method
+	model.StatusCode = a.StatusCode
+	model.SendHeaders = a.SendHeaders
+	model.ReceiveHeaders = a.ReceiveHeaders
+	model.PostData = a.PostData
 
-	if interval, err := check.Interval.Float64(); err == nil {
-		model.Interval = types.Float64Value(interval)
-	}
+	model.Port = a.Port
+	model.Username = a.Username
+	model.Secure = a.Secure
+	model.Verify = a.Verify
+	model.IPv6 = a.IPv6
+	model.ServerName = a.ServerName
+	model.Transport = a.Transport
 
-	model.State = types.Int64Value(int64(check.State))
-	model.Created = types.Int64Value(check.Created)
-	model.Modified = types.Int64Value(check.Modified)
+	model.DNSType = a.DNSType
+	model.DNSToResolve = a.DNSToResolve
+	model.DNSSection = a.DNSSection
+	model.DNSRD = a.DNSRD
 
-	if check.Description != "" {
-		model.Description = types.StringValue(check.Description)
-	} else {
-		model.Description = types.StringNull()
-	}
+	model.WarningDays = a.WarningDays
+	model.ClientCert = a.ClientCert
+
+	model.Email = a.Email
+	model.Database = a.Database
+	model.Query = a.Query
+	model.Namespace = a.Namespace
+	model.SSHKey = a.SSHKey
+	model.SNMPv = a.SNMPv
+
+	model.VerifyVolume = a.VerifyVolume
+	model.VolumeMin = a.VolumeMin
+
+	model.Notifications = notificationsToModel(a.Notifications)
 
 	// Only tags_all is refreshed from the API. tags is the configuration's own
 	// value: overwriting it with the API's list would fold default_tags into it
-	// and produce a permanent diff against the configuration.
-	if check.Tags != nil {
-		tagsAll, _ := types.ListValueFrom(ctx, types.StringType, check.Tags)
-		model.TagsAll = tagsAll
-	} else {
+	// and produce a permanent diff against the configuration. No tags reads as
+	// an empty list rather than null, matching what ModifyPlan plans.
+	if a.Tags.IsNull() {
 		model.TagsAll = types.ListValueMust(types.StringType, []attr.Value{})
-	}
-
-	// Handle RunLocations - API returns false when not set, or []string when set
-	switch rl := check.RunLocations.(type) {
-	case []interface{}:
-		locations := make([]string, 0, len(rl))
-		for _, loc := range rl {
-			if s, ok := loc.(string); ok {
-				locations = append(locations, s)
-			}
-		}
-		if len(locations) > 0 {
-			runLocs, _ := types.ListValueFrom(ctx, types.StringType, locations)
-			model.RunLocations = runLocs
-		} else {
-			model.RunLocations = types.ListNull(types.StringType)
-		}
-	case []string:
-		if len(rl) > 0 {
-			runLocs, _ := types.ListValueFrom(ctx, types.StringType, rl)
-			model.RunLocations = runLocs
-		} else {
-			model.RunLocations = types.ListNull(types.StringType)
-		}
-	default:
-		model.RunLocations = types.ListNull(types.StringType)
-	}
-
-	model.Target = types.StringValue(check.Parameters.Target)
-
-	if threshold, ok := check.Parameters.Threshold.(float64); ok {
-		model.Threshold = types.Int64Value(int64(threshold))
-	} else if threshold, ok := check.Parameters.Threshold.(string); ok {
-		var t int
-		fmt.Sscanf(threshold, "%d", &t)
-		model.Threshold = types.Int64Value(int64(t))
-	}
-
-	if sens, ok := check.Parameters.Sens.(float64); ok {
-		model.Sens = types.Int64Value(int64(sens))
-	} else if sens, ok := check.Parameters.Sens.(string); ok {
-		var s int
-		fmt.Sscanf(sens, "%d", &s)
-		model.Sens = types.Int64Value(int64(s))
-	}
-
-	// ContentString: only set if API returns non-empty value
-	// Empty string from API should be treated as null to match TF config expectations
-	if check.Parameters.ContentString != "" {
-		model.ContentString = types.StringValue(check.Parameters.ContentString)
 	} else {
-		model.ContentString = types.StringNull()
+		model.TagsAll = a.Tags
 	}
 
-	// Map boolean fields from API - only set if API returns a value
-	// These fields are check-type specific and may not be returned by the API
-	if check.Parameters.Regex != nil {
-		model.Regex = types.BoolValue(parseBoolInterface(check.Parameters.Regex))
+	// interval, threshold and sens are Optional+Computed and carry a schema
+	// default, so a plan never holds null for any of them. The API omits a
+	// field it has no value for, and writing that null over a planned 15 would
+	// fail the apply with an inconsistent-result error rather than report
+	// anything useful. Keep what the caller already had.
+	if !a.Interval.IsNull() {
+		model.Interval = a.Interval
 	}
-	if check.Parameters.Invert != nil {
-		model.Invert = types.BoolValue(parseBoolInterface(check.Parameters.Invert))
+	if !a.Threshold.IsNull() {
+		model.Threshold = a.Threshold
 	}
-	if check.Parameters.Follow != nil {
-		model.Follow = types.BoolValue(parseBoolInterface(check.Parameters.Follow))
-	}
-	if check.Parameters.IPv6 != nil {
-		model.IPv6 = types.BoolValue(parseBoolInterface(check.Parameters.IPv6))
-	}
-	if check.Parameters.Verify != nil {
-		model.Verify = types.BoolValue(parseBoolInterface(check.Parameters.Verify))
-	}
-	if check.Parameters.DNSRD != nil {
-		model.DNSRD = types.BoolValue(parseBoolInterface(check.Parameters.DNSRD))
-	}
-	// Mute is a top-level field that the API always returns
-	model.Mute = types.BoolValue(parseBoolInterface(check.Mute))
-
-	// Dep is a top-level field for notification dependency
-	if dep, ok := check.Dep.(string); ok && dep != "" {
-		model.Dep = types.StringValue(dep)
-	} else {
-		model.Dep = types.StringNull()
+	if !a.Sens.IsNull() {
+		model.Sens = a.Sens
 	}
 
-	// Map statuscode from API - only set if API returns a value
-	if check.Parameters.StatusCode != nil {
-		if statusCode, ok := check.Parameters.StatusCode.(float64); ok {
-			model.StatusCode = types.Int64Value(int64(statusCode))
-		} else if statusCode, ok := check.Parameters.StatusCode.(string); ok {
-			var sc int
-			fmt.Sscanf(statusCode, "%d", &sc)
-			if sc > 0 {
-				model.StatusCode = types.Int64Value(int64(sc))
-			}
-		}
-	}
-
-	if check.Parameters.Method != "" {
-		model.Method = types.StringValue(check.Parameters.Method)
-	} else {
-		model.Method = types.StringNull()
-	}
-
-	if check.Parameters.DNSType != "" {
-		model.DNSType = types.StringValue(check.Parameters.DNSType)
-	} else {
-		model.DNSType = types.StringNull()
-	}
-
-	if check.Parameters.DNSToResolve != "" {
-		model.DNSToResolve = types.StringValue(check.Parameters.DNSToResolve)
-	} else {
-		model.DNSToResolve = types.StringNull()
-	}
-
-	if check.Parameters.ServerName != "" {
-		model.ServerName = types.StringValue(check.Parameters.ServerName)
-	} else {
-		model.ServerName = types.StringNull()
-	}
-
-	if check.Parameters.VerifyVolume != nil {
-		model.VerifyVolume = types.BoolValue(parseBoolInterface(check.Parameters.VerifyVolume))
-	} else {
-		model.VerifyVolume = types.BoolNull()
-	}
-
-	if volumeMin, ok := check.Parameters.VolumeMin.(float64); ok {
-		model.VolumeMin = types.Int64Value(int64(volumeMin))
-	} else {
-		model.VolumeMin = types.Int64Null()
-	}
-
-	model.WarningDays = warningDaysFromAPI(check.Parameters.WarningDays)
-
-	if port, ok := check.Parameters.Port.(float64); ok {
-		model.Port = types.Int64Value(int64(port))
-	} else {
-		model.Port = types.Int64Null()
-	}
-
-	if check.Parameters.Username != "" {
-		model.Username = types.StringValue(check.Parameters.Username)
-	} else {
-		model.Username = types.StringNull()
-	}
-
-	// The API never returns the password, so there is nothing to map. Callers
-	// must restore the configured value; see preservePassword.
+	// NodePing never returns the password, so there is nothing to map here.
+	// Callers restore the configured value; see preservePassword.
 	model.Password = types.StringNull()
 
-	if len(check.Parameters.SendHeaders) > 0 {
-		headers, _ := types.MapValueFrom(ctx, types.StringType, check.Parameters.SendHeaders)
-		model.SendHeaders = headers
-	} else {
-		model.SendHeaders = types.MapNull(types.StringType)
+	// snmpcom is left exactly as the caller had it. It is an SNMP community
+	// string -- a shared secret in all but name, which is why checkattr omits
+	// it -- so Create, Read and Update keep the configured value and an import
+	// leaves it null for the configuration to supply, the same bargain as
+	// password.
+}
+
+// notificationsToModel converts the shared notification shape to the
+// resource's own. The two structs carry identical fields; they are separate
+// types only because the resource builds its block out of a schema.Block and
+// the data sources out of a schema.ListNestedAttribute.
+func notificationsToModel(in []checkattr.NotificationModel) []NotificationModel {
+	if len(in) == 0 {
+		return nil
 	}
 
-	if len(check.Parameters.ReceiveHeaders) > 0 {
-		headers, _ := types.MapValueFrom(ctx, types.StringType, check.Parameters.ReceiveHeaders)
-		model.ReceiveHeaders = headers
-	} else {
-		model.ReceiveHeaders = types.MapNull(types.StringType)
+	out := make([]NotificationModel, 0, len(in))
+	for _, n := range in {
+		out = append(out, NotificationModel{
+			ContactID: n.ContactID,
+			Delay:     n.Delay,
+			Schedule:  n.Schedule,
+		})
 	}
-
-	// SSHKey and ClientCert can be string or bool from API
-	if sshKey, ok := check.Parameters.SSHKey.(string); ok && sshKey != "" {
-		model.SSHKey = types.StringValue(sshKey)
-	} else {
-		model.SSHKey = types.StringNull()
-	}
-
-	if clientCert, ok := check.Parameters.ClientCert.(string); ok && clientCert != "" {
-		model.ClientCert = types.StringValue(clientCert)
-	} else {
-		model.ClientCert = types.StringNull()
-	}
-
-	if len(check.Notifications) > 0 {
-		model.Notifications = make([]NotificationModel, 0, len(check.Notifications))
-		// Track seen notifications to avoid duplicates
-		seen := make(map[string]bool)
-		for _, n := range check.Notifications {
-			for contactID, config := range n {
-				if configMap, ok := config.(map[string]interface{}); ok {
-					var delay int64
-					if d, ok := configMap["delay"].(float64); ok {
-						delay = int64(d)
-					}
-					schedule := "All"
-					if s, ok := configMap["schedule"].(string); ok {
-						schedule = s
-					}
-					// Create unique key for deduplication
-					key := fmt.Sprintf("%s:%d:%s", contactID, delay, schedule)
-					if seen[key] {
-						continue // Skip duplicate
-					}
-					seen[key] = true
-
-					notif := NotificationModel{
-						ContactID: types.StringValue(contactID),
-						Delay:     types.Int64Value(delay),
-						Schedule:  types.StringValue(schedule),
-					}
-					model.Notifications = append(model.Notifications, notif)
-				}
-			}
-		}
-	} else {
-		model.Notifications = nil
-	}
+	return out
 }
 
 // preservePassword restores a write-only credential after mapCheckToModel.
@@ -887,41 +775,6 @@ func preservePassword(model *CheckResourceModel, configured types.String) {
 	}
 }
 
-// warningDaysFromAPI maps the API's warningdays onto the model. A check that
-// should fail only once its certificate expires has no warning period, and the
-// API reports that in three ways: "" or no field at all for checks written
-// through the API, and 0 for any check saved in the web interface with the
-// field left empty. All three read as null. Reading 0 as a number would put a
-// value in state that the schema's AtLeast(1) validator rejects in
-// configuration, so such a check could be neither imported nor planned
-// without a permanent diff.
-func warningDaysFromAPI(v interface{}) types.Int64 {
-	if days, ok := v.(float64); ok && days > 0 {
-		return types.Int64Value(int64(days))
-	}
-	return types.Int64Null()
-}
-
 func normalizeURL(u string) string {
 	return strings.TrimSuffix(u, "/")
-}
-
-// parseBoolInterface converts various interface{} types to bool.
-// NodePing API returns booleans as bool, string ("true"/"false"), or numbers (0/1).
-func parseBoolInterface(v interface{}) bool {
-	if v == nil {
-		return false
-	}
-	switch val := v.(type) {
-	case bool:
-		return val
-	case string:
-		return val == "true" || val == "1"
-	case float64:
-		return val != 0
-	case int:
-		return val != 0
-	default:
-		return false
-	}
 }

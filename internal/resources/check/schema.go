@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -458,9 +459,15 @@ terraform import nodeping_check.example 201205050153W2Q4C-0J2HSIRF
 							Default:     int64default.StaticInt64(0),
 						},
 						"schedule": schema.StringAttribute{
-							Description: "Notification schedule name.",
+							// Without a default an unset schedule is sent as
+							// "" and stored as "", while the check data
+							// sources normalise the same notification to
+							// "All" -- so the resource and the data source
+							// disagreed about the same check.
+							Description: `Notification schedule name. Defaults to "All", the schedule NodePing applies when a notification names none.`,
 							Optional:    true,
 							Computed:    true,
+							Default:     stringdefault.StaticString("All"),
 						},
 					},
 				},
