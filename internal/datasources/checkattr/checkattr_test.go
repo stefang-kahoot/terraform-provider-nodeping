@@ -25,13 +25,20 @@ func TestBool(t *testing.T) {
 		{name: `string "true"`, input: "true", want: true},
 		{name: `string "1"`, input: "1", want: true},
 		{name: `string "false"`, input: "false", want: false},
+		{name: `string "0"`, input: "0", want: false},
 		{name: "empty string", input: "", want: false},
 		// The API only ever sends lowercase, so the comparison stays exact.
 		{name: `string "True" is not truthy`, input: "True", want: false},
+		{name: "arbitrary string", input: "yes", want: false},
 		{name: "float64 1", input: float64(1), want: true},
 		{name: "float64 0", input: float64(0), want: false},
+		{name: "float64 negative", input: float64(-1), want: true},
+		{name: "float64 fractional", input: float64(0.5), want: true},
 		{name: "int 1", input: 1, want: true},
+		{name: "int 0", input: 0, want: false},
 		{name: "unhandled type does not panic", input: []string{"true"}, want: false},
+		{name: "unhandled type map", input: map[string]bool{"v": true}, want: false},
+		{name: "unhandled type int64", input: int64(1), want: false},
 	}
 
 	for _, tt := range tests {
