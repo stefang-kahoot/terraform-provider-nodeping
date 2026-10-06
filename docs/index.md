@@ -110,11 +110,15 @@ resource "nodeping_check" "example" {
   type   = "HTTP"
   target = "https://example.com"
   label  = "Example Check"
-  tags   = ["production"]  # Will be merged with default_tags
+  tags   = ["production"]
 }
 ```
 
-The resulting check will have tags: `["managed-by-terraform", "team-devops", "production"]`. Duplicate tags are automatically removed.
+The check's `tags_all` is then `["managed-by-terraform", "team-devops", "production"]` -- the defaults first, then the check's own, with duplicates removed. That is the list NodePing receives.
+
+`tags` itself stays exactly as written in the configuration. The two are kept apart because `tags` is the configuration's own value: merging the defaults into it would make the planned value differ from the configured one, which Terraform rejects with "Provider produced invalid plan".
+
+On import, `tags` is reconstructed from `tags_all` by removing the provider's current `default_tags`.
 
 ## Schema
 

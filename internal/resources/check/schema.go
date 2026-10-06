@@ -39,6 +39,7 @@ type CheckResourceModel struct {
 	HomeLoc        types.String        `tfsdk:"homeloc"`
 	AutoDiag       types.Bool          `tfsdk:"autodiag"`
 	Tags           types.List          `tfsdk:"tags"`
+	TagsAll        types.List          `tfsdk:"tags_all"`
 	Notifications  []NotificationModel `tfsdk:"notifications"`
 	State          types.Int64         `tfsdk:"state"`
 	Created        types.Int64         `tfsdk:"created"`
@@ -252,9 +253,14 @@ terraform import nodeping_check.example 201205050153W2Q4C-0J2HSIRF
 				Default:     booldefault.StaticBool(false),
 			},
 			"tags": schema.ListAttribute{
-				Description:         "Tags for grouping checks. Provider default_tags are automatically merged with these tags.",
-				MarkdownDescription: "Tags for grouping checks. Provider `default_tags` are automatically merged with these tags.",
+				Description:         "Tags for grouping checks, as written in the configuration. The provider's default_tags are not included here; see tags_all for the tags actually applied to the check.",
+				MarkdownDescription: "Tags for grouping checks, as written in the configuration. The provider's `default_tags` are not included here; see `tags_all` for the tags actually applied to the check.",
 				Optional:            true,
+				ElementType:         types.StringType,
+			},
+			"tags_all": schema.ListAttribute{
+				Description:         "Every tag applied to the check: tags merged with the provider's default_tags, in that order and deduplicated.",
+				MarkdownDescription: "Every tag applied to the check: `tags` merged with the provider's `default_tags`, in that order and deduplicated.",
 				Computed:            true,
 				ElementType:         types.StringType,
 			},
