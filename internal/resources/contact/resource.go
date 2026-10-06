@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -378,106 +379,161 @@ func (r *ContactResource) ImportState(ctx context.Context, req resource.ImportSt
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
+// mapAddressesToModel turns the API's address map into the ordered list the
+// schema declares.
+//
+// `address` is a list block, so Terraform compares it position by position:
+// state.address[0] has to be the address the configuration wrote first. The
+// API answers with a map and Go randomises map iteration, so the order used
+// to change from one call to the next. A contact with a single address cannot
+// show that, which is how it survived; with two or more the apply either
+// fails outright with "inconsistent result after apply" or -- the quieter
+// outcome -- each block binds to the wrong address.id, and the next update
+// PUTs one address's fields under another's ID and corrupts both.
+//
+// Addresses are therefore matched back to the planned blocks by
+// (type, address), the pair that identifies an address to someone reading the
+// configuration. The ID cannot serve: NodePing assigns it, so it is unknown
+// for a block being created. Whatever the plan does not account for follows
+// in ID order -- an address added outside Terraform, or every address when
+// there is no plan to match against, as on import.
 func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.ContactAddress, planAddresses []AddressModel, diags *diag.Diagnostics) []AddressModel {
 	if len(apiAddresses) == 0 {
 		return nil
 	}
 
-	result := make([]AddressModel, 0, len(apiAddresses))
+	ids := make([]string, 0, len(apiAddresses))
+	for id := range apiAddresses {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
 
-	planAddrByAddress := make(map[string]AddressModel)
-	for _, addr := range planAddresses {
-		key := addr.Type.ValueString() + ":" + addr.Address.ValueString()
-		planAddrByAddress[key] = addr
+	// Queue the IDs under the key the configuration knows them by. Two
+	// identical blocks hold two queued IDs and claim them in order, so they
+	// stay put instead of both resolving to the same address.
+	byKey := make(map[string][]string, len(ids))
+	for _, id := range ids {
+		key := addressKey(apiAddresses[id].Type, apiAddresses[id].Address)
+		byKey[key] = append(byKey[key], id)
 	}
 
-	for id, addr := range apiAddresses {
-		model := AddressModel{
-			ID:            types.StringValue(id),
-			Type:          types.StringValue(addr.Type),
-			Address:       types.StringValue(addr.Address),
-			SuppressUp:    types.BoolValue(addr.SuppressUp),
-			SuppressDown:  types.BoolValue(addr.SuppressDown),
-			SuppressFirst: types.BoolValue(addr.SuppressFirst),
-			SuppressDiag:  types.BoolValue(addr.SuppressDiag),
-			SuppressAll:   types.BoolValue(addr.SuppressAll),
-			Mute:          types.BoolValue(false),
+	ordered := make([]string, 0, len(ids))
+	claimed := make(map[string]bool, len(ids))
+	for _, planned := range planAddresses {
+		key := addressKey(planned.Type.ValueString(), planned.Address.ValueString())
+		queue := byKey[key]
+		if len(queue) == 0 {
+			continue
 		}
-
-		if addr.Mute != nil {
-			var muteVal interface{}
-			if err := json.Unmarshal(addr.Mute, &muteVal); err == nil {
-				switch v := muteVal.(type) {
-				case bool:
-					model.Mute = types.BoolValue(v)
-				case float64:
-					model.Mute = types.BoolValue(v > 0)
-				}
-			}
+		byKey[key] = queue[1:]
+		claimed[queue[0]] = true
+		ordered = append(ordered, queue[0])
+	}
+	for _, id := range ids {
+		if !claimed[id] {
+			ordered = append(ordered, id)
 		}
-
-		if addr.Action != "" {
-			model.Action = types.StringValue(addr.Action)
-		} else {
-			model.Action = types.StringNull()
-		}
-
-		if addr.Data != nil {
-			// Data can be a string or an object from the API
-			// Always normalize to compact JSON for consistent comparison
-			switch v := addr.Data.(type) {
-			case string:
-				if v != "" {
-					// Try to normalize JSON string to compact form
-					model.Data = types.StringValue(normalizeJSONString(v))
-				} else {
-					model.Data = types.StringNull()
-				}
-			case map[string]interface{}:
-				// Convert object to compact JSON string
-				jsonBytes, err := json.Marshal(v)
-				if err == nil {
-					model.Data = types.StringValue(string(jsonBytes))
-				} else {
-					model.Data = types.StringNull()
-				}
-			default:
-				// Try to marshal whatever it is to compact JSON
-				jsonBytes, err := json.Marshal(v)
-				if err == nil {
-					model.Data = types.StringValue(string(jsonBytes))
-				} else {
-					model.Data = types.StringNull()
-				}
-			}
-		} else {
-			model.Data = types.StringNull()
-		}
-
-		if addr.Priority != nil {
-			model.Priority = types.Int64Value(int64(*addr.Priority))
-		} else {
-			model.Priority = types.Int64Null()
-		}
-
-		if len(addr.Headers) > 0 {
-			headers, _ := types.MapValueFrom(ctx, types.StringType, addr.Headers)
-			model.Headers = headers
-		} else {
-			model.Headers = types.MapNull(types.StringType)
-		}
-
-		if len(addr.QueryStrings) > 0 {
-			qs, _ := types.MapValueFrom(ctx, types.StringType, addr.QueryStrings)
-			model.QueryStrings = qs
-		} else {
-			model.QueryStrings = types.MapNull(types.StringType)
-		}
-
-		result = append(result, model)
 	}
 
+	result := make([]AddressModel, 0, len(ordered))
+	for _, id := range ordered {
+		result = append(result, addressToModel(ctx, id, apiAddresses[id], diags))
+	}
 	return result
+}
+
+// addressKey identifies an address the way a configuration does. NodePing
+// allows the same address under two types, so the type is part of the key.
+func addressKey(addrType, address string) string {
+	return addrType + ":" + address
+}
+
+func addressToModel(ctx context.Context, id string, addr client.ContactAddress, diags *diag.Diagnostics) AddressModel {
+	model := AddressModel{
+		ID:            types.StringValue(id),
+		Type:          types.StringValue(addr.Type),
+		Address:       types.StringValue(addr.Address),
+		SuppressUp:    types.BoolValue(addr.SuppressUp),
+		SuppressDown:  types.BoolValue(addr.SuppressDown),
+		SuppressFirst: types.BoolValue(addr.SuppressFirst),
+		SuppressDiag:  types.BoolValue(addr.SuppressDiag),
+		SuppressAll:   types.BoolValue(addr.SuppressAll),
+		Mute:          types.BoolValue(false),
+	}
+
+	if addr.Mute != nil {
+		var muteVal interface{}
+		if err := json.Unmarshal(addr.Mute, &muteVal); err == nil {
+			switch v := muteVal.(type) {
+			case bool:
+				model.Mute = types.BoolValue(v)
+			case float64:
+				model.Mute = types.BoolValue(v > 0)
+			}
+		}
+	}
+
+	if addr.Action != "" {
+		model.Action = types.StringValue(addr.Action)
+	} else {
+		model.Action = types.StringNull()
+	}
+
+	if addr.Data != nil {
+		// Data can be a string or an object from the API
+		// Always normalize to compact JSON for consistent comparison
+		switch v := addr.Data.(type) {
+		case string:
+			if v != "" {
+				// Try to normalize JSON string to compact form
+				model.Data = types.StringValue(normalizeJSONString(v))
+			} else {
+				model.Data = types.StringNull()
+			}
+		case map[string]interface{}:
+			// Convert object to compact JSON string
+			jsonBytes, err := json.Marshal(v)
+			if err == nil {
+				model.Data = types.StringValue(string(jsonBytes))
+			} else {
+				model.Data = types.StringNull()
+			}
+		default:
+			// Try to marshal whatever it is to compact JSON
+			jsonBytes, err := json.Marshal(v)
+			if err == nil {
+				model.Data = types.StringValue(string(jsonBytes))
+			} else {
+				model.Data = types.StringNull()
+			}
+		}
+	} else {
+		model.Data = types.StringNull()
+	}
+
+	if addr.Priority != nil {
+		model.Priority = types.Int64Value(int64(*addr.Priority))
+	} else {
+		model.Priority = types.Int64Null()
+	}
+
+	if len(addr.Headers) > 0 {
+		headers, d := types.MapValueFrom(ctx, types.StringType, addr.Headers)
+		diags.Append(d...)
+		model.Headers = headers
+	} else {
+		model.Headers = types.MapNull(types.StringType)
+	}
+
+	if len(addr.QueryStrings) > 0 {
+		qs, d := types.MapValueFrom(ctx, types.StringType, addr.QueryStrings)
+		diags.Append(d...)
+		model.QueryStrings = qs
+	} else {
+		model.QueryStrings = types.MapNull(types.StringType)
+	}
+
+	return model
 }
 
 // normalizeJSONString attempts to normalize a JSON string to compact form.

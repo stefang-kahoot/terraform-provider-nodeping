@@ -123,6 +123,7 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 		if custrole, ok := req["custrole"]; ok {
 			contact["custrole"] = custrole
 		}
+		contact["addresses"] = updatedAddresses(contact, req)
 
 		m.contacts[id] = contact
 		w.Header().Set("Content-Type", "application/json")
@@ -140,6 +141,36 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 	default:
 		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
 	}
+}
+
+// updatedAddresses applies an update's `addresses` and `newaddresses` to a
+// contact, the way the API does.
+//
+// `addresses` carries the surviving addresses keyed by their existing ID and
+// replaces the stored set; `newaddresses` is a list with no IDs yet, and each
+// entry is assigned one. An absent `addresses` key leaves what is already
+// stored alone -- which is exactly what makes omitting it a bug rather than a
+// no-op when every address has in fact been replaced. The mock ignored both
+// keys entirely before, so no test could tell the difference.
+func updatedAddresses(contact, req map[string]interface{}) map[string]interface{} {
+	addresses, _ := contact["addresses"].(map[string]interface{})
+
+	if updated, ok := req["addresses"].(map[string]interface{}); ok {
+		addresses = updated
+	}
+	if addresses == nil {
+		addresses = make(map[string]interface{})
+	}
+
+	if added, ok := req["newaddresses"].([]interface{}); ok {
+		for _, addr := range added {
+			if addrMap, ok := addr.(map[string]interface{}); ok {
+				addresses[generateID()] = addrMap
+			}
+		}
+	}
+
+	return addresses
 }
 
 // The NodePing API takes check-type specific arguments at the top level of a
