@@ -224,7 +224,7 @@ resource "nodeping_check" "service" {
 
 ### SSL/TLS Arguments
 
-- `warningdays` - (Optional) Days before expiry to fail check.
+- `warningdays` - (Optional) Days before expiry to fail check. Leave unset for the check to fail only once the certificate expires. NodePing's web interface stores that as `0`, which reads back as unset.
 - `servername` - (Optional) Server name for SNI.
 - `verify` - (Optional) Verify SSL certificate.
 - `secure` - (Optional) SSL mode: `false`, `ssl`, `starttls`.

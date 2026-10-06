@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 // The NodePing API is inconsistent about how it encodes booleans: some
@@ -81,6 +82,35 @@ func TestNormalizeURL(t *testing.T) {
 			t.Parallel()
 			if got := normalizeURL(tt.input); got != tt.want {
 				t.Errorf("normalizeURL(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// A check with no warning period reaches the provider as "", as no field at
+// all, or -- once saved in the web interface with the field left empty -- as 0.
+// All of them must read as null: 0 in state would demand `warningdays = 0` in
+// configuration, which the schema rejects.
+func TestWarningDaysFromAPI(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input interface{}
+		want  types.Int64
+	}{
+		{name: "positive number", input: float64(21), want: types.Int64Value(21)},
+		{name: "zero from the web interface", input: float64(0), want: types.Int64Null()},
+		{name: "empty string from the API", input: "", want: types.Int64Null()},
+		{name: "field absent", input: nil, want: types.Int64Null()},
+		{name: "negative number", input: float64(-1), want: types.Int64Null()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := warningDaysFromAPI(tt.input); !got.Equal(tt.want) {
+				t.Errorf("warningDaysFromAPI(%#v) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
 	}

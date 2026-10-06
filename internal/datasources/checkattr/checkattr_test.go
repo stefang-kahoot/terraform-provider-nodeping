@@ -102,6 +102,46 @@ func TestOptionalInt64(t *testing.T) {
 	}
 }
 
+func TestOptionalWarningDays(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    interface{}
+		wantNull bool
+		want     int64
+	}{
+		{name: "number", input: float64(21), want: 21},
+		{name: "numeric string", input: "30", want: 30},
+		// Saved in the web interface with the field left empty.
+		{name: "zero is null", input: float64(0), wantNull: true},
+		{name: "zero string is null", input: "0", wantNull: true},
+		// Written through the API without a warning period.
+		{name: "empty string is null", input: "", wantNull: true},
+		{name: "nil is null", input: nil, wantNull: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := OptionalWarningDays(tt.input)
+			if tt.wantNull {
+				if !got.IsNull() {
+					t.Errorf("OptionalWarningDays(%#v) = %v, want null", tt.input, got)
+				}
+				return
+			}
+			if got.IsNull() {
+				t.Fatalf("OptionalWarningDays(%#v) = null, want %d", tt.input, tt.want)
+			}
+			if got.ValueInt64() != tt.want {
+				t.Errorf("OptionalWarningDays(%#v) = %d, want %d", tt.input, got.ValueInt64(), tt.want)
+			}
+		})
+	}
+}
+
 func TestOptionalString(t *testing.T) {
 	t.Parallel()
 
