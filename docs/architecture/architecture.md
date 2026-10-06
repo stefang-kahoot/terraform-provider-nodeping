@@ -518,29 +518,41 @@ data "nodeping_checks" "all" {
 
 ## 8. Import Strategy
 
-### Contact Import
+Every resource is imported by its plain NodePing ID. There is no account
+prefix: the import ID format is `{resource_id}` and nothing else.
 
 ```bash
-# Primary account
-terraform import nodeping_contact.example 201205050153W2Q4C-BKPGH
-
-# SubAccount
-terraform import nodeping_contact.example 201205050153W2Q4C:201205050153W2Q4C-BKPGH
+terraform import nodeping_contact.example      201205050153W2Q4C-BKPGH
+terraform import nodeping_check.example        201205050153W2Q4C-0J2HSIRF
+terraform import nodeping_contactgroup.example 201205050153W2Q4C-G-1ZIYU
 ```
 
-Import ID format: `{contact_id}` or `{customer_id}:{contact_id}`
+### SubAccounts
 
-### Check Import
+A SubAccount resource is imported through a provider instance configured for
+that account:
 
-```bash
-# Primary account
-terraform import nodeping_check.example 201205050153W2Q4C-0J2HSIRF
+```hcl
+provider "nodeping" {
+  alias       = "subaccount"
+  api_token   = var.nodeping_token
+  customer_id = "SUBACCOUNT_ID"
+}
 
-# SubAccount
-terraform import nodeping_check.example 201205050153W2Q4C:201205050153W2Q4C-0J2HSIRF
+resource "nodeping_check" "example" {
+  provider = nodeping.subaccount
+  # ...
+}
 ```
 
-Import ID format: `{check_id}` or `{customer_id}:{check_id}`
+The account therefore lives on the client, which applies it to every request,
+rather than on the import ID. A `{customer_id}:{resource_id}` form used to be
+accepted and is not any more: it scoped the import's own GET and nothing else,
+so the Read that follows an import addressed the base account, 404'd, and left
+Terraform proposing to recreate the resource in the wrong place. `customer_id`
+is Computed on all three resources, so there was nowhere to pin the account
+either. `internal/importid` rejects the form with a message naming the alias to
+write instead.
 
 ---
 
