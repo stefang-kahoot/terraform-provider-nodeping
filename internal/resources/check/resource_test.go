@@ -98,3 +98,73 @@ func TestNewCheckResourceMetadata(t *testing.T) {
 		t.Errorf("TypeName = %q, want %q", resp.TypeName, want)
 	}
 }
+
+func TestMergeTags(t *testing.T) {
+	tests := []struct {
+		name        string
+		defaultTags []string
+		configured  []string
+		want        []string
+	}{
+		{
+			name: "no tags at all yields an empty list, not nil",
+			want: []string{},
+		},
+		{
+			name:        "defaults come first, then the check's own",
+			defaultTags: []string{"managed-by-terraform", "owner-team-sre"},
+			configured:  []string{"website"},
+			want:        []string{"managed-by-terraform", "owner-team-sre", "website"},
+		},
+		{
+			name:       "no defaults configured leaves the check's tags untouched",
+			configured: []string{"website", "critical"},
+			want:       []string{"website", "critical"},
+		},
+		{
+			name:        "a tag repeated in both appears once, in the default's position",
+			defaultTags: []string{"managed-by-terraform", "shared"},
+			configured:  []string{"shared", "website"},
+			want:        []string{"managed-by-terraform", "shared", "website"},
+		},
+		{
+			name:        "duplicates within one list collapse too",
+			defaultTags: []string{"a", "a"},
+			configured:  []string{"b", "b"},
+			want:        []string{"a", "b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeTags(tt.defaultTags, tt.configured)
+
+			if got == nil {
+				t.Fatal("mergeTags returned nil; tags_all is Computed and may not be null")
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("mergeTags() = %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("mergeTags()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestMergeTagsDoesNotAliasInputs(t *testing.T) {
+	defaultTags := []string{"managed-by-terraform"}
+	configured := []string{"website"}
+
+	got := mergeTags(defaultTags, configured)
+	got[0] = "mutated"
+
+	if defaultTags[0] != "managed-by-terraform" {
+		t.Errorf("mergeTags aliased its defaultTags argument: %v", defaultTags)
+	}
+	if configured[0] != "website" {
+		t.Errorf("mergeTags aliased its configuredTags argument: %v", configured)
+	}
+}

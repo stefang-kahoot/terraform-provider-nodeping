@@ -743,3 +743,92 @@ data "nodeping_check" "notified" {
 		},
 	})
 }
+
+// The provider's default_tags used to be merged into the check's own `tags`
+// from ModifyPlan. `tags` is the configuration's value, so Terraform rejected
+// the result outright -- any check that set tags of its own failed to plan
+// with "Provider produced invalid plan". The merge now lands in `tags_all`,
+// leaving `tags` as written.
+func TestAccCheckResource_defaultTagsMergeIntoTagsAll(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	providerWithDefaults := fmt.Sprintf(`
+provider "nodeping" {
+  api_token    = "acc-test-token"
+  api_url      = %q
+  default_tags = ["managed-by-terraform", "owner-team-sre"]
+}
+`, mock.URL())
+
+	config := providerWithDefaults + `
+resource "nodeping_check" "tagged" {
+  type   = "HTTP"
+  target = "https://example.com"
+  label  = "acc-tags"
+  tags   = ["website"]
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					// tags stays exactly what the configuration said.
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags.#", "1"),
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags.0", "website"),
+					// tags_all carries the defaults ahead of it.
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.#", "3"),
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.0", "managed-by-terraform"),
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.1", "owner-team-sre"),
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.2", "website"),
+				),
+			},
+			{
+				// The whole point: a second plan is empty.
+				Config:   config,
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
+// A check with no tags of its own still gets the provider's defaults, and
+// tags_all must be a known empty list rather than null when there are none.
+func TestAccCheckResource_defaultTagsWithoutCheckTags(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	config := fmt.Sprintf(`
+provider "nodeping" {
+  api_token    = "acc-test-token"
+  api_url      = %q
+  default_tags = ["managed-by-terraform"]
+}
+
+resource "nodeping_check" "untagged" {
+  type   = "HTTP"
+  target = "https://example.com"
+}
+`, mock.URL())
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr("nodeping_check.untagged", "tags.#"),
+					resource.TestCheckResourceAttr("nodeping_check.untagged", "tags_all.#", "1"),
+					resource.TestCheckResourceAttr("nodeping_check.untagged", "tags_all.0", "managed-by-terraform"),
+				),
+			},
+			{
+				Config:   config,
+				PlanOnly: true,
+			},
+		},
+	})
+}

@@ -190,7 +190,14 @@ resource "nodeping_check" "service" {
 
 ### Tagging
 
-- `tags` - (Optional) List of tags for grouping checks.
+- `tags` - (Optional) List of tags for grouping checks, as written in the
+  configuration. The provider's `default_tags` are not included here.
+
+### Attribute Reference (tags)
+
+- `tags_all` - Every tag applied to the check: `tags` merged with the
+  provider's `default_tags`, defaults first, deduplicated. This is what the
+  check actually carries in NodePing.
 
 ### Notifications Block
 

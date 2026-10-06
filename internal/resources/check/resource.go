@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -81,7 +82,7 @@ func (r *CheckResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	// Preserve the original target from plan if API normalized it (e.g., added trailing slash)
 	originalTarget := plan.Target
-	plannedTags := plan.Tags
+	plannedTagsAll := plan.TagsAll
 	plannedPassword := plan.Password
 
 	r.mapCheckToModel(ctx, check, &plan)
@@ -92,11 +93,11 @@ func (r *CheckResource) Create(ctx context.Context, req resource.CreateRequest, 
 		plan.Target = originalTarget
 	}
 
-	// Restore planned tags if API returned null/empty but we sent tags
-	if !plannedTags.IsNull() && !plannedTags.IsUnknown() {
-		if plan.Tags.IsNull() {
-			plan.Tags = plannedTags
-		}
+	// tags_all is Computed, so the applied value has to match what was planned
+	// even if the API echoes the list back in another order or not at all. The
+	// next Read refreshes it from the API.
+	if !plannedTagsAll.IsNull() && !plannedTagsAll.IsUnknown() {
+		plan.TagsAll = plannedTagsAll
 	}
 
 	tflog.Debug(ctx, "Created check", map[string]interface{}{
@@ -184,7 +185,7 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// These fields change on every API call but Terraform expects the planned values
 	plannedModified := plan.Modified
 	plannedContentString := plan.ContentString
-	plannedTags := plan.Tags
+	plannedTagsAll := plan.TagsAll
 	plannedPassword := plan.Password
 
 	r.mapCheckToModel(ctx, check, &plan)
@@ -210,12 +211,11 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		}
 	}
 
-	// Restore planned tags if API returned null/empty but we sent tags
-	// This can happen if the API doesn't immediately return the tags we just set
-	if !plannedTags.IsNull() && !plannedTags.IsUnknown() {
-		if plan.Tags.IsNull() {
-			plan.Tags = plannedTags
-		}
+	// tags_all is Computed, so the applied value has to match what was planned
+	// even if the API echoes the list back in another order or not at all. The
+	// next Read refreshes it from the API.
+	if !plannedTagsAll.IsNull() && !plannedTagsAll.IsUnknown() {
+		plan.TagsAll = plannedTagsAll
 	}
 
 	tflog.Debug(ctx, "Updated check", map[string]interface{}{
@@ -294,17 +294,59 @@ func (r *CheckResource) ImportState(ctx context.Context, req resource.ImportStat
 	var state CheckResourceModel
 	r.mapCheckToModel(ctx, check, &state)
 
+	// mapCheckToModel only fills tags_all, because on a refresh tags belongs to
+	// the configuration. An import has no configuration to read, so reconstruct
+	// tags as the half of tags_all that is not a provider default -- that is
+	// what the configuration would have to say to produce this check.
+	resp.Diagnostics.Append(setImportedTags(ctx, &state, c.GetDefaultTags())...)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+// setImportedTags derives tags from an imported check's tags_all by removing
+// the provider's default tags. A check carrying nothing but defaults gets a
+// null tags, matching a configuration that omits the argument entirely.
+func setImportedTags(ctx context.Context, state *CheckResourceModel, defaultTags []string) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	if state.TagsAll.IsNull() || state.TagsAll.IsUnknown() {
+		state.Tags = types.ListNull(types.StringType)
+		return diags
+	}
+
+	var all []string
+	diags.Append(state.TagsAll.ElementsAs(ctx, &all, false)...)
+	if diags.HasError() {
+		return diags
+	}
+
+	isDefault := make(map[string]bool, len(defaultTags))
+	for _, tag := range defaultTags {
+		isDefault[tag] = true
+	}
+
+	own := make([]string, 0, len(all))
+	for _, tag := range all {
+		if !isDefault[tag] {
+			own = append(own, tag)
+		}
+	}
+
+	if len(own) == 0 {
+		state.Tags = types.ListNull(types.StringType)
+		return diags
+	}
+
+	tags, d := types.ListValueFrom(ctx, types.StringType, own)
+	diags.Append(d...)
+	state.Tags = tags
+
+	return diags
 }
 
 func (r *CheckResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	// Skip if destroying or client not configured
 	if req.Plan.Raw.IsNull() || r.client == nil {
-		return
-	}
-
-	defaultTags := r.client.GetDefaultTags()
-	if len(defaultTags) == 0 {
 		return
 	}
 
@@ -314,43 +356,53 @@ func (r *CheckResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanR
 		return
 	}
 
-	// Get configured tags from plan
+	// tags is the configuration's own value and must be left exactly as it is:
+	// it is Optional, so Terraform rejects a plan that changes it. The merge
+	// with default_tags lands in tags_all instead.
+	//
+	// tags_all stays unknown while tags is, so an unknown tag list does not get
+	// silently flattened into the defaults alone.
+	if plan.Tags.IsUnknown() {
+		plan.TagsAll = types.ListUnknown(types.StringType)
+		resp.Diagnostics.Append(resp.Plan.Set(ctx, &plan)...)
+		return
+	}
+
 	var configuredTags []string
-	if !plan.Tags.IsNull() && !plan.Tags.IsUnknown() {
+	if !plan.Tags.IsNull() {
 		resp.Diagnostics.Append(plan.Tags.ElementsAs(ctx, &configuredTags, false)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
 	}
 
-	// Merge default tags with configured tags
-	mergedTags := make([]string, 0, len(defaultTags)+len(configuredTags))
-	mergedTags = append(mergedTags, defaultTags...)
-	mergedTags = append(mergedTags, configuredTags...)
-
-	// Deduplicate
-	seen := make(map[string]bool)
-	uniqueTags := []string{}
-	for _, tag := range mergedTags {
-		if !seen[tag] {
-			seen[tag] = true
-			uniqueTags = append(uniqueTags, tag)
-		}
-	}
-
-	// Convert to types.List
-	tagElements := make([]types.String, len(uniqueTags))
-	for i, tag := range uniqueTags {
-		tagElements[i] = types.StringValue(tag)
-	}
-	tagsList, diags := types.ListValueFrom(ctx, types.StringType, tagElements)
+	tagsAll, diags := types.ListValueFrom(ctx, types.StringType, mergeTags(r.client.GetDefaultTags(), configuredTags))
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	plan.Tags = tagsList
+	plan.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.Plan.Set(ctx, &plan)...)
+}
+
+// mergeTags returns the provider's default tags followed by the check's own,
+// with duplicates removed and order preserved. The result is always non-nil so
+// that a check with no tags at all plans to an empty list rather than null --
+// tags_all is Computed and may not stay unknown after apply.
+func mergeTags(defaultTags, configuredTags []string) []string {
+	merged := make([]string, 0, len(defaultTags)+len(configuredTags))
+	seen := make(map[string]bool, len(defaultTags)+len(configuredTags))
+
+	for _, tag := range append(append([]string{}, defaultTags...), configuredTags...) {
+		if seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		merged = append(merged, tag)
+	}
+
+	return merged
 }
 
 func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResourceModel, diags *diag.Diagnostics) client.CheckCreateRequest {
@@ -418,13 +470,12 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 		req.HomeLoc = plan.HomeLoc.ValueString()
 	}
 
-	// Tags are merged with default_tags in ModifyPlan, but ModifyPlan returns
-	// early when the provider has no default_tags configured. In that case tags
-	// stays unknown (it is Optional+Computed), and ElementsAs cannot convert an
-	// unknown value into []string -- it fails the apply outright.
-	if !plan.Tags.IsNull() && !plan.Tags.IsUnknown() {
+	// tags_all, not tags: it is what ModifyPlan merged with the provider's
+	// default_tags, and so what the check should actually carry. It is only
+	// unknown when tags itself is.
+	if !plan.TagsAll.IsNull() && !plan.TagsAll.IsUnknown() {
 		var tags []string
-		diags.Append(plan.Tags.ElementsAs(ctx, &tags, false)...)
+		diags.Append(plan.TagsAll.ElementsAs(ctx, &tags, false)...)
 		req.Tags = tags
 	}
 
@@ -604,11 +655,14 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 		model.Description = types.StringNull()
 	}
 
+	// Only tags_all is refreshed from the API. tags is the configuration's own
+	// value: overwriting it with the API's list would fold default_tags into it
+	// and produce a permanent diff against the configuration.
 	if check.Tags != nil {
-		tags, _ := types.ListValueFrom(ctx, types.StringType, check.Tags)
-		model.Tags = tags
+		tagsAll, _ := types.ListValueFrom(ctx, types.StringType, check.Tags)
+		model.TagsAll = tagsAll
 	} else {
-		model.Tags = types.ListNull(types.StringType)
+		model.TagsAll = types.ListValueMust(types.StringType, []attr.Value{})
 	}
 
 	// Handle RunLocations - API returns false when not set, or []string when set
