@@ -32,6 +32,22 @@ import (
 // NodePing IDs are of the form 201205050153W2Q4C-0J2HSIRF and never contain a
 // colon, so a colon is unambiguously the old form rather than part of an ID.
 func Parse(id, typeName string, diags *diag.Diagnostics) (string, bool) {
+	if id == "" {
+		// Left unchecked this reaches GET /<resources>/, the *list* endpoint,
+		// which answers 200 with every resource and decodes into an empty
+		// one -- so the import appears to succeed and writes a junk entry to
+		// state.
+		diags.AddError(
+			"Invalid Import ID",
+			fmt.Sprintf(
+				"An import ID is required. Pass the %[1]s's NodePing ID:\n\n"+
+					"  terraform import nodeping_%[1]s.example <%[1]s_id>",
+				typeName,
+			),
+		)
+		return "", false
+	}
+
 	customerID, bareID, found := strings.Cut(id, ":")
 	if !found {
 		return id, true

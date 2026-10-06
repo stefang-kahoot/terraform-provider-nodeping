@@ -83,7 +83,6 @@ func (r *CheckResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	// Preserve the original target from plan if API normalized it (e.g., added trailing slash)
 	originalTarget := plan.Target
-	plannedTags := plan.Tags
 	plannedPassword := plan.Password
 
 	r.mapCheckToModel(ctx, check, &plan, &resp.Diagnostics)
@@ -95,13 +94,6 @@ func (r *CheckResource) Create(ctx context.Context, req resource.CreateRequest, 
 	// Restore original target if it's semantically equivalent (trailing slash difference)
 	if normalizeURL(originalTarget.ValueString()) == normalizeURL(plan.Target.ValueString()) {
 		plan.Target = originalTarget
-	}
-
-	// Restore planned tags if API returned null/empty but we sent tags
-	if !plannedTags.IsNull() && !plannedTags.IsUnknown() {
-		if plan.Tags.IsNull() {
-			plan.Tags = plannedTags
-		}
 	}
 
 	tflog.Debug(ctx, "Created check", map[string]interface{}{
@@ -191,8 +183,6 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// Preserve computed fields from plan to avoid "inconsistent result after apply" errors
 	// These fields change on every API call but Terraform expects the planned values
 	plannedModified := plan.Modified
-	plannedContentString := plan.ContentString
-	plannedTags := plan.Tags
 	plannedPassword := plan.Password
 
 	r.mapCheckToModel(ctx, check, &plan, &resp.Diagnostics)
@@ -210,23 +200,6 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// expects the value from the plan (UseStateForUnknown preserves it)
 	if !plannedModified.IsUnknown() {
 		plan.Modified = plannedModified
-	}
-
-	// Restore planned contentstring if plan had a non-empty value but API returned empty
-	// This handles the case where user explicitly set contentstring in config
-	if !plannedContentString.IsNull() && plannedContentString.ValueString() != "" {
-		// User explicitly set contentstring, keep their value if API returned empty
-		if plan.ContentString.IsNull() || plan.ContentString.ValueString() == "" {
-			plan.ContentString = plannedContentString
-		}
-	}
-
-	// Restore planned tags if API returned null/empty but we sent tags
-	// This can happen if the API doesn't immediately return the tags we just set
-	if !plannedTags.IsNull() && !plannedTags.IsUnknown() {
-		if plan.Tags.IsNull() {
-			plan.Tags = plannedTags
-		}
 	}
 
 	tflog.Debug(ctx, "Updated check", map[string]interface{}{
@@ -588,76 +561,73 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check, model *CheckResourceModel, diags *diag.Diagnostics) {
 	a := checkattr.FromAPI(ctx, check, diags)
 
+	// The envelope. The API always answers with these, so there is never a
+	// previous value to fall back on.
 	model.ID = a.ID
 	model.CustomerID = a.CustomerID
 	model.Type = a.Type
-	model.Target = a.Target
-	model.Label = a.Label
 	model.Enabled = a.Enabled
 	model.Public = a.Public
 	model.Mute = a.Mute
 	model.AutoDiag = a.AutoDiag
-	model.Dep = a.Dep
 	model.State = a.State
 	model.Created = a.Created
 	model.Modified = a.Modified
-	model.Description = a.Description
-	model.Tags = a.Tags
-	model.RunLocations = a.RunLocations
-	model.HomeLoc = a.HomeLoc
 
-	model.ContentString = a.ContentString
-	model.Regex = a.Regex
-	model.Invert = a.Invert
-	model.Follow = a.Follow
-	model.Method = a.Method
-	model.StatusCode = a.StatusCode
-	model.SendHeaders = a.SendHeaders
-	model.ReceiveHeaders = a.ReceiveHeaders
-	model.PostData = a.PostData
+	// Everything else resolves through keep(). See its comment: the API's
+	// value wins whenever it has one, but its silence must not be allowed to
+	// overwrite a planned value with null.
+	model.Target = keep(model.Target, a.Target)
+	model.Label = keep(model.Label, a.Label)
+	model.Dep = keep(model.Dep, a.Dep)
+	model.Description = keep(model.Description, a.Description)
+	model.Interval = keep(model.Interval, a.Interval)
+	model.Threshold = keep(model.Threshold, a.Threshold)
+	model.Sens = keep(model.Sens, a.Sens)
+	model.Tags = keep(model.Tags, a.Tags)
+	model.RunLocations = keep(model.RunLocations, a.RunLocations)
+	model.HomeLoc = keep(model.HomeLoc, a.HomeLoc)
 
-	model.Port = a.Port
-	model.Username = a.Username
-	model.Secure = a.Secure
-	model.Verify = a.Verify
-	model.IPv6 = a.IPv6
-	model.ServerName = a.ServerName
-	model.Transport = a.Transport
+	model.ContentString = keep(model.ContentString, a.ContentString)
+	model.Regex = keep(model.Regex, a.Regex)
+	model.Invert = keep(model.Invert, a.Invert)
+	model.Follow = keep(model.Follow, a.Follow)
+	model.Method = keep(model.Method, a.Method)
+	model.StatusCode = keep(model.StatusCode, a.StatusCode)
+	model.SendHeaders = keep(model.SendHeaders, a.SendHeaders)
+	model.ReceiveHeaders = keep(model.ReceiveHeaders, a.ReceiveHeaders)
+	model.PostData = keep(model.PostData, a.PostData)
 
-	model.DNSType = a.DNSType
-	model.DNSToResolve = a.DNSToResolve
-	model.DNSSection = a.DNSSection
-	model.DNSRD = a.DNSRD
+	model.Port = keep(model.Port, a.Port)
+	model.Username = keep(model.Username, a.Username)
+	model.Secure = keep(model.Secure, a.Secure)
+	model.Verify = keep(model.Verify, a.Verify)
+	model.IPv6 = keep(model.IPv6, a.IPv6)
+	model.ServerName = keep(model.ServerName, a.ServerName)
+	model.Transport = keep(model.Transport, a.Transport)
 
-	model.WarningDays = a.WarningDays
-	model.ClientCert = a.ClientCert
+	model.DNSType = keep(model.DNSType, a.DNSType)
+	model.DNSToResolve = keep(model.DNSToResolve, a.DNSToResolve)
+	model.DNSSection = keep(model.DNSSection, a.DNSSection)
+	model.DNSRD = keep(model.DNSRD, a.DNSRD)
 
-	model.Email = a.Email
-	model.Database = a.Database
-	model.Query = a.Query
-	model.Namespace = a.Namespace
-	model.SSHKey = a.SSHKey
-	model.SNMPv = a.SNMPv
+	model.WarningDays = keep(model.WarningDays, a.WarningDays)
+	model.ClientCert = keep(model.ClientCert, a.ClientCert)
 
-	model.VerifyVolume = a.VerifyVolume
-	model.VolumeMin = a.VolumeMin
+	model.Email = keep(model.Email, a.Email)
+	model.Database = keep(model.Database, a.Database)
+	model.Query = keep(model.Query, a.Query)
+	model.Namespace = keep(model.Namespace, a.Namespace)
+	model.SSHKey = keep(model.SSHKey, a.SSHKey)
+	model.SNMPv = keep(model.SNMPv, a.SNMPv)
 
+	model.VerifyVolume = keep(model.VerifyVolume, a.VerifyVolume)
+	model.VolumeMin = keep(model.VolumeMin, a.VolumeMin)
+
+	// Not keep(): notifications is a block, and a check that genuinely
+	// notifies nobody has to come back empty rather than retaining whatever
+	// the caller held.
 	model.Notifications = notificationsToModel(a.Notifications)
-
-	// interval, threshold and sens are Optional+Computed and carry a schema
-	// default, so a plan never holds null for any of them. The API omits a
-	// field it has no value for, and writing that null over a planned 15 would
-	// fail the apply with an inconsistent-result error rather than report
-	// anything useful. Keep what the caller already had.
-	if !a.Interval.IsNull() {
-		model.Interval = a.Interval
-	}
-	if !a.Threshold.IsNull() {
-		model.Threshold = a.Threshold
-	}
-	if !a.Sens.IsNull() {
-		model.Sens = a.Sens
-	}
 
 	// NodePing never returns the password, so there is nothing to map here.
 	// Callers restore the configured value; see preservePassword.
@@ -668,6 +638,39 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 	// it -- so Create, Read and Update keep the configured value and an import
 	// leaves it null for the configuration to supply, the same bargain as
 	// password.
+}
+
+// keep resolves one attribute: the API's value when it has one, whatever the
+// caller already held when it does not.
+//
+// Most check attributes are Optional and not Computed, so Terraform requires
+// the value an apply produces to equal the value it planned, exactly.
+// mapCheckToModel runs against the *plan* on create and update, so writing
+// null over a planned value merely because the response did not mention the
+// field fails the apply outright with "Provider produced inconsistent result
+// after apply" -- and NodePing does leave a parameter out of its answer when
+// the check type does not use it. The mapping this package used to carry
+// guarded seven attributes against exactly that, by hand, under the comment
+// "these fields are check-type specific and may not be returned by the API".
+// checkattr has no equivalent, and correctly so: a data source has no plan to
+// contradict. This is that guard, generalised to every attribute rather than
+// the seven someone happened to hit.
+//
+// Drift is still reported whenever the API has an opinion -- a value it
+// returns always beats the one in state. What is given up is noticing that a
+// parameter disappeared at NodePing altogether, which is the same trade the
+// hand-written guards already made.
+//
+// An unknown value is never kept: it has to be resolved to something concrete
+// before the apply ends, so the API's null is the right answer there.
+func keep[T interface {
+	IsNull() bool
+	IsUnknown() bool
+}](current, fromAPI T) T {
+	if fromAPI.IsNull() && !current.IsNull() && !current.IsUnknown() {
+		return current
+	}
+	return fromAPI
 }
 
 // notificationsToModel converts the shared notification shape to the

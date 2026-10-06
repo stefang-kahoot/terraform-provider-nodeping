@@ -42,6 +42,29 @@ func TestParseAcceptsAPlainID(t *testing.T) {
 	}
 }
 
+// An empty ID would otherwise reach GET /<resources>/ -- the list endpoint --
+// which answers 200 and decodes into an empty resource, so the import looks
+// like it worked and leaves junk in state.
+func TestParseRejectsAnEmptyID(t *testing.T) {
+	t.Parallel()
+
+	var diags diag.Diagnostics
+	got, ok := Parse("", "check", &diags)
+
+	if ok {
+		t.Fatal("Parse(\"\") accepted an empty import ID")
+	}
+	if got != "" {
+		t.Errorf("Parse(\"\") = %q, want empty", got)
+	}
+	if !diags.HasError() {
+		t.Fatal("Parse(\"\") rejected the ID without saying why")
+	}
+	if detail := diags.Errors()[0].Detail(); !strings.Contains(detail, "<check_id>") {
+		t.Errorf("message does not show what to pass instead:\n%s", detail)
+	}
+}
+
 func TestParseRejectsTheSubAccountPrefix(t *testing.T) {
 	t.Parallel()
 
