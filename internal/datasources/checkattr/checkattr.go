@@ -250,6 +250,19 @@ func OptionalInt64(v interface{}) types.Int64 {
 	}
 }
 
+// OptionalWarningDays maps warningdays like OptionalInt64, except that 0 is
+// null too. The web interface saves an empty "days before expiration" field as
+// 0, while checks written through the API carry "" -- both mean the check
+// fails only once the certificate expires, and both read as null, matching
+// the nodeping_check resource, which rejects 0 in configuration.
+func OptionalWarningDays(v interface{}) types.Int64 {
+	days := OptionalInt64(v)
+	if !days.IsNull() && days.ValueInt64() <= 0 {
+		return types.Int64Null()
+	}
+	return days
+}
+
 // OptionalString maps the API's empty string to null, matching how an unset
 // attribute looks in a configuration.
 func OptionalString(s string) types.String {
@@ -352,7 +365,7 @@ func FromAPI(ctx context.Context, check *client.Check, diags *diag.Diagnostics) 
 		DNSSection:   OptionalString(p.DNSSection),
 		DNSRD:        OptionalBool(p.DNSRD),
 
-		WarningDays: OptionalInt64(p.WarningDays),
+		WarningDays: OptionalWarningDays(p.WarningDays),
 		ClientCert:  stringFromInterface(p.ClientCert),
 
 		Email:     OptionalString(p.Email),

@@ -796,11 +796,7 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 		model.VolumeMin = types.Int64Null()
 	}
 
-	if warningDays, ok := check.Parameters.WarningDays.(float64); ok {
-		model.WarningDays = types.Int64Value(int64(warningDays))
-	} else {
-		model.WarningDays = types.Int64Null()
-	}
+	model.WarningDays = warningDaysFromAPI(check.Parameters.WarningDays)
 
 	if port, ok := check.Parameters.Port.(float64); ok {
 		model.Port = types.Int64Value(int64(port))
@@ -889,6 +885,21 @@ func preservePassword(model *CheckResourceModel, configured types.String) {
 	if !configured.IsNull() && !configured.IsUnknown() {
 		model.Password = configured
 	}
+}
+
+// warningDaysFromAPI maps the API's warningdays onto the model. A check that
+// should fail only once its certificate expires has no warning period, and the
+// API reports that in three ways: "" or no field at all for checks written
+// through the API, and 0 for any check saved in the web interface with the
+// field left empty. All three read as null. Reading 0 as a number would put a
+// value in state that the schema's AtLeast(1) validator rejects in
+// configuration, so such a check could be neither imported nor planned
+// without a permanent diff.
+func warningDaysFromAPI(v interface{}) types.Int64 {
+	if days, ok := v.(float64); ok && days > 0 {
+		return types.Int64Value(int64(days))
+	}
+	return types.Int64Null()
 }
 
 func normalizeURL(u string) string {
