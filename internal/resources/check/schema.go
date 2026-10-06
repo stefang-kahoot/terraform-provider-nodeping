@@ -161,6 +161,25 @@ Checks can be imported using the check ID:
 ` + "```shell" + `
 terraform import nodeping_check.example 201205050153W2Q4C-0J2HSIRF
 ` + "```" + `
+
+To import a check from a SubAccount, point the resource at a provider instance
+configured for that account and import it by its plain ID. The provider's
+` + "`customer_id`" + ` is applied to every request, including the reads and updates
+that follow the import -- which is precisely what a prefix on the import ID
+could not do:
+
+` + "```hcl" + `
+provider "nodeping" {
+  alias       = "subaccount"
+  api_token   = var.nodeping_token
+  customer_id = "SUBACCOUNT_ID"
+}
+
+resource "nodeping_check" "example" {
+  provider = nodeping.subaccount
+  # ...
+}
+` + "```" + `
 `,
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{

@@ -383,35 +383,42 @@ output "following_redirects" {
 
 ## Import
 
-### Import a Contact
+Every resource is imported by its plain NodePing ID.
 
 ```bash
-# Primary account
-terraform import nodeping_contact.example 201205050153W2Q4C-BKPGH
-
-# SubAccount
-terraform import nodeping_contact.example CUSTOMER_ID:201205050153W2Q4C-BKPGH
-```
-
-### Import a Check
-
-```bash
-# Primary account
-terraform import nodeping_check.example 201205050153W2Q4C-0J2HSIRF
-
-# SubAccount
-terraform import nodeping_check.example CUSTOMER_ID:201205050153W2Q4C-0J2HSIRF
-```
-
-### Import a Contact Group
-
-```bash
-# Primary account
+terraform import nodeping_contact.example      201205050153W2Q4C-BKPGH
+terraform import nodeping_check.example        201205050153W2Q4C-0J2HSIRF
 terraform import nodeping_contactgroup.example 201205050153W2Q4C-G-1ZIYU
-
-# SubAccount
-terraform import nodeping_contactgroup.example CUSTOMER_ID:201205050153W2Q4C-G-1ZIYU
 ```
+
+### Importing from a SubAccount
+
+Point the resource at a provider instance configured for the SubAccount, then
+import by the plain ID as above. The provider's `customer_id` is applied to
+every request, so the reads and updates that follow the import address the
+same account the import did.
+
+```hcl
+provider "nodeping" {
+  alias       = "subaccount"
+  api_token   = var.nodeping_token
+  customer_id = "SUBACCOUNT_ID"
+}
+
+resource "nodeping_check" "example" {
+  provider = nodeping.subaccount
+  # ...
+}
+```
+
+```bash
+terraform import nodeping_check.example 201205050153W2Q4C-0J2HSIRF
+```
+
+> A `customer_id:resource_id` import ID is **not** accepted. It used to be, and
+> it scoped only the import's own request: everything afterwards addressed the
+> base account, 404'd, and left Terraform proposing to recreate the resource in
+> the wrong place.
 
 ## Security Considerations
 

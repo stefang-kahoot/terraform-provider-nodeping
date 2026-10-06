@@ -1,6 +1,7 @@
 package provider_test
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -202,6 +203,88 @@ resource "nodeping_check" "imported" {
 			},
 		},
 	})
+}
+
+// The "customer_id:id" import ID used to be accepted and documented for all
+// three resources. It scoped the import's own GET and nothing else, so the
+// read that follows an import went to the base account, 404'd, and left
+// Terraform proposing to recreate a resource that already existed in the
+// SubAccount. There is nowhere to pin the account either: customer_id is
+// Computed, so a configuration cannot set it.
+//
+// It now fails at the import, pointing at the provider alias that does work.
+// Failing is the whole point: half-importing into the wrong account is the
+// outcome worth preventing.
+func TestAccResources_rejectTheSubAccountImportPrefix(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   string
+		resource string
+		importID string
+	}{
+		{
+			name: "check",
+			config: `
+resource "nodeping_check" "sub" {
+  type   = "HTTP"
+  target = "https://example.com"
+  label  = "acc-subaccount-check"
+}
+`,
+			resource: "nodeping_check.sub",
+			importID: "201205050153W2Q4C:201205050153W2Q4C-0J2HSIRF",
+		},
+		{
+			name: "contact",
+			config: `
+resource "nodeping_contact" "sub" {
+  name = "acc-subaccount-contact"
+
+  address {
+    type    = "email"
+    address = "sub@example.com"
+  }
+}
+`,
+			resource: "nodeping_contact.sub",
+			importID: "201205050153W2Q4C:201205050153W2Q4C-BKPGH",
+		},
+		{
+			name: "contactgroup",
+			config: `
+resource "nodeping_contactgroup" "sub" {
+  name = "acc-subaccount-group"
+}
+`,
+			resource: "nodeping_contactgroup.sub",
+			importID: "201205050153W2Q4C:201205050153W2Q4C-G-1ZIYU",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := testutil.NewMockNodePingServer()
+			t.Cleanup(mock.Close)
+
+			config := providerConfig(mock.URL()) + tt.config
+
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6ProviderFactories(),
+				Steps: []resource.TestStep{
+					{Config: config},
+					{
+						Config:        config,
+						ResourceName:  tt.resource,
+						ImportState:   true,
+						ImportStateId: tt.importID,
+						// The message has to name the way forward, not just
+						// refuse. Anyone hitting this is mid-migration.
+						ExpectError: regexp.MustCompile(`(?s)no longer accepted.*nodeping\.subaccount`),
+					},
+				},
+			})
+		})
+	}
 }
 
 func TestAccContactResource_importRoundTrips(t *testing.T) {
