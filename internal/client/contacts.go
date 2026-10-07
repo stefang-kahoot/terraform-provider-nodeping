@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,7 +27,7 @@ func (c *Client) GetContact(ctx context.Context, id string) (*Contact, error) {
 		path:   "/contacts/" + url.PathEscape(id),
 	}, &result)
 	if err != nil {
-		if apiErr, ok := err.(*APIError); ok && apiErr.IsNotFound() {
+		if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.IsNotFound() {
 			return nil, &NotFoundError{ResourceType: "contact", ResourceID: id}
 		}
 		return nil, fmt.Errorf("failed to get contact: %w", err)

@@ -50,7 +50,7 @@ func (m *MockNodePingServer) handleContacts(w http.ResponseWriter, r *http.Reque
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(m.contacts)
+		_ = json.NewEncoder(w).Encode(m.contacts)
 
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -81,7 +81,7 @@ func (m *MockNodePingServer) handleContacts(w http.ResponseWriter, r *http.Reque
 
 		m.contacts[id] = contact
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(contact)
+		_ = json.NewEncoder(w).Encode(contact)
 
 	default:
 		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
@@ -102,7 +102,7 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(contact)
+		_ = json.NewEncoder(w).Encode(contact)
 
 	case http.MethodPut:
 		contact, ok := m.contacts[id]
@@ -126,7 +126,7 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 
 		m.contacts[id] = contact
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(contact)
+		_ = json.NewEncoder(w).Encode(contact)
 
 	case http.MethodDelete:
 		if _, ok := m.contacts[id]; !ok {
@@ -135,7 +135,7 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 		}
 		delete(m.contacts, id)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id})
 
 	default:
 		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
@@ -177,7 +177,7 @@ func (m *MockNodePingServer) handleChecks(w http.ResponseWriter, r *http.Request
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(m.checks)
+		_ = json.NewEncoder(w).Encode(m.checks)
 
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -207,7 +207,7 @@ func (m *MockNodePingServer) handleChecks(w http.ResponseWriter, r *http.Request
 
 		m.checks[id] = check
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(check)
+		_ = json.NewEncoder(w).Encode(check)
 
 	default:
 		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
@@ -228,7 +228,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(check)
+		_ = json.NewEncoder(w).Encode(check)
 
 	case http.MethodPut:
 		check, ok := m.checks[id]
@@ -265,7 +265,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 
 		m.checks[id] = check
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(check)
+		_ = json.NewEncoder(w).Encode(check)
 
 	case http.MethodDelete:
 		if _, ok := m.checks[id]; !ok {
@@ -274,7 +274,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 		}
 		delete(m.checks, id)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id})
 
 	default:
 		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
@@ -298,7 +298,7 @@ func (m *MockNodePingServer) handleContactGroups(w http.ResponseWriter, r *http.
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(m.contactgroups)
+		_ = json.NewEncoder(w).Encode(m.contactgroups)
 
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -318,7 +318,7 @@ func (m *MockNodePingServer) handleContactGroups(w http.ResponseWriter, r *http.
 
 		m.contactgroups[id] = group
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(group)
+		_ = json.NewEncoder(w).Encode(group)
 
 	default:
 		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
@@ -339,7 +339,7 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(group)
+		_ = json.NewEncoder(w).Encode(group)
 
 	case http.MethodPut:
 		group, ok := m.contactgroups[id]
@@ -363,7 +363,7 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 
 		m.contactgroups[id] = group
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(group)
+		_ = json.NewEncoder(w).Encode(group)
 
 	case http.MethodDelete:
 		if _, ok := m.contactgroups[id]; !ok {
@@ -372,7 +372,7 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 		}
 		delete(m.contactgroups, id)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id})
 
 	default:
 		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)

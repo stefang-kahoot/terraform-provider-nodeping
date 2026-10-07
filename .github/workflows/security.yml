@@ -140,6 +140,21 @@ jobs:
               --exit-code 1 \
               /repo
 
+  # Fails a PR that adds or bumps a dependency with a known HIGH or CRITICAL
+  # advisory, the same bar as the Trivy gate. Needs the dependency graph, which
+  # is a repository setting. On push and schedule the job is skipped, which
+  # counts as passing, so it is safe to require.
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Reads the PR's dependency diff from the API; no checkout needed.
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+
   # Tool versions pinned outside any manifest Dependabot reads. Lives here, not
   # in ci.yml, because ci.yml also gates releases and an upstream release must
   # not block a tag. Keep it out of the required checks for the same reason.

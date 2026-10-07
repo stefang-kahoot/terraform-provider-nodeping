@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,7 +27,7 @@ func (c *Client) GetContactGroup(ctx context.Context, id string) (*ContactGroup,
 		path:   "/contactgroups/" + url.PathEscape(id),
 	}, &result)
 	if err != nil {
-		if apiErr, ok := err.(*APIError); ok && apiErr.IsNotFound() {
+		if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.IsNotFound() {
 			return nil, &NotFoundError{ResourceType: "contact group", ResourceID: id}
 		}
 		return nil, fmt.Errorf("failed to get contact group: %w", err)
@@ -73,7 +74,7 @@ func (c *Client) DeleteContactGroup(ctx context.Context, id string) error {
 		path:   "/contactgroups/" + url.PathEscape(id),
 	}, &result)
 	if err != nil {
-		if apiErr, ok := err.(*APIError); ok && apiErr.IsNotFound() {
+		if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.IsNotFound() {
 			return &NotFoundError{ResourceType: "contact group", ResourceID: id}
 		}
 		return fmt.Errorf("failed to delete contact group: %w", err)

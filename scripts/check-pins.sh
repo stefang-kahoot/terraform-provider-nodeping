@@ -20,6 +20,7 @@ cd "$(dirname "$0")/.."
 
 COOLDOWN_DAYS=${COOLDOWN_DAYS:-7}
 SECURITY=.github/workflows/security.yml
+CI=.github/workflows/ci.yml
 
 fail() { echo "error: $*" >&2; exit 2; }
 
@@ -28,15 +29,22 @@ gitleaks=$(sed -n 's/^  GITLEAKS_VERSION: *//p' "$SECURITY")
 trivy=$(sed -n 's/^  TRIVY_VERSION: *//p' "$SECURITY")
 govulncheck=$(sed -n 's|.*govulncheck@\(v[0-9][0-9.]*\).*|\1|p' "$SECURITY")
 golangci_lint=$(sed -n 's/^GOLANGCI_LINT_VERSION := *//p' Makefile)
+actionlint=$(sed -n 's/^  ACTIONLINT_VERSION: *//p' "$CI")
+zizmor=$(sed -n 's/^  ZIZMOR_VERSION: *//p' "$CI")
+
+# golangci-lint is pinned twice too: CI must lint with what `make lint` runs, or
+# a clean local run can still fail the PR.
+golangci_lint_ci=$(sed -n 's/^  GOLANGCI_LINT_VERSION: *//p' "$CI")
 
 # goreleaser is pinned twice on purpose: ci.yml's snapshot job exists to prove
 # the exact version release.yml will run, so the two must never differ.
-goreleaser_ci=$(sed -n 's/^ *version: *\(v[0-9][0-9.]*\)$/\1/p' .github/workflows/ci.yml)
+goreleaser_ci=$(sed -n 's/^ *version: *\(v[0-9][0-9.]*\)$/\1/p' "$CI")
 goreleaser=$(sed -n 's/^ *version: *\(v[0-9][0-9.]*\)$/\1/p' .github/workflows/release.yml)
 
 for pair in "gitleaks:$gitleaks" "trivy:$trivy" "govulncheck:$govulncheck" \
 	"golangci_lint:$golangci_lint" "goreleaser:$goreleaser" \
-	"goreleaser_ci:$goreleaser_ci"; do
+	"goreleaser_ci:$goreleaser_ci" "golangci_lint_ci:$golangci_lint_ci" \
+	"actionlint:$actionlint" "zizmor:$zizmor"; do
 	name=${pair%%:*}
 	value=${pair#*:}
 	[ -n "$value" ] || fail "could not determine the $name pin"
@@ -46,6 +54,8 @@ done
 
 [ "$goreleaser" = "$goreleaser_ci" ] ||
 	fail "goreleaser is $goreleaser in release.yml but $goreleaser_ci in ci.yml"
+[ "$golangci_lint" = "$golangci_lint_ci" ] ||
+	fail "golangci-lint is $golangci_lint in the Makefile but $golangci_lint_ci in ci.yml"
 
 # --- look up upstream ---------------------------------------------------------
 # Each lookup prints "<version> <age in days>".
@@ -89,7 +99,10 @@ check gitleaks "$gitleaks" "$(github_latest gitleaks/gitleaks)" "$SECURITY"
 check trivy "$trivy" "$(github_latest aquasecurity/trivy)" "$SECURITY"
 check goreleaser "$goreleaser" "$(github_latest goreleaser/goreleaser)" \
 	".github/workflows/ci.yml and release.yml"
-check golangci-lint "$golangci_lint" "$(github_latest golangci/golangci-lint)" Makefile
+check golangci-lint "$golangci_lint" "$(github_latest golangci/golangci-lint)" \
+	"the Makefile and ci.yml"
+check actionlint "$actionlint" "$(github_latest rhysd/actionlint)" "$CI"
+check zizmor "$zizmor" "$(github_latest zizmorcore/zizmor)" "$CI"
 check govulncheck "$govulncheck" "$(go_latest golang.org/x/vuln)" "$SECURITY"
 
 exit "$stale"

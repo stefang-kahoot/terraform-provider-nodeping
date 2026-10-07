@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,7 +33,7 @@ func TestListChecks(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(checks)
+		_ = json.NewEncoder(w).Encode(checks)
 	}))
 	defer server.Close()
 
@@ -80,7 +81,7 @@ func TestGetCheck(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(check)
+		_ = json.NewEncoder(w).Encode(check)
 	}))
 	defer server.Close()
 
@@ -106,7 +107,7 @@ func TestGetCheck(t *testing.T) {
 func TestGetCheckNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Check not found"})
+		_ = json.NewEncoder(w).Encode(ErrorResponse{Error: "Check not found"})
 	}))
 	defer server.Close()
 
@@ -120,7 +121,7 @@ func TestGetCheckNotFound(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	_, ok := err.(*NotFoundError)
+	_, ok := errors.AsType[*NotFoundError](err)
 	if !ok {
 		t.Errorf("expected *NotFoundError, got %T", err)
 	}
@@ -153,7 +154,7 @@ func TestCreateCheck(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(check)
+		_ = json.NewEncoder(w).Encode(check)
 	}))
 	defer server.Close()
 
@@ -192,7 +193,7 @@ func TestUpdateCheck(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(check)
+		_ = json.NewEncoder(w).Encode(check)
 	}))
 	defer server.Close()
 
@@ -222,7 +223,7 @@ func TestDeleteCheck(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(DeleteResponse{OK: true, ID: "201205050153W2Q4C-0J2HSIRF"})
+		_ = json.NewEncoder(w).Encode(DeleteResponse{OK: true, ID: "201205050153W2Q4C-0J2HSIRF"})
 	}))
 	defer server.Close()
 

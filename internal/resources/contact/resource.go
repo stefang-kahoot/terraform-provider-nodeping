@@ -3,6 +3,7 @@ package contact
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -148,7 +149,7 @@ func (r *ContactResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 	contact, err := r.client.GetContact(ctx, state.ID.ValueString())
 	if err != nil {
-		if _, ok := err.(*client.NotFoundError); ok {
+		if _, ok := errors.AsType[*client.NotFoundError](err); ok {
 			tflog.Debug(ctx, "Contact not found, removing from state", map[string]interface{}{
 				"id": state.ID.ValueString(),
 			})
@@ -326,7 +327,7 @@ func (r *ContactResource) Delete(ctx context.Context, req resource.DeleteRequest
 
 	err := r.client.DeleteContact(ctx, state.ID.ValueString())
 	if err != nil {
-		if _, ok := err.(*client.NotFoundError); ok {
+		if _, ok := errors.AsType[*client.NotFoundError](err); ok {
 			return
 		}
 		resp.Diagnostics.AddError(

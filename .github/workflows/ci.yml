@@ -11,9 +11,17 @@ permissions:
 
 env:
   GO_VERSION: '1.27'
+  # Dependabot reads `uses:` only, so these three are invisible to it.
+  # scripts/check-pins.sh flags them when upstream moves on, and fails if
+  # GOLANGCI_LINT_VERSION drifts from the Makefile's.
+  GOLANGCI_LINT_VERSION: v2.14.0
+  ACTIONLINT_VERSION: 1.7.12
+  ZIZMOR_VERSION: 1.30.1
 
 jobs:
   build:
+    # Vet now runs in the golangci-lint job, but the name stays: the `main`
+    # ruleset requires `ci / Build & vet` by exact string.
     name: Build & vet
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -26,18 +34,6 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-
-      - name: gofmt
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "These files are not gofmt'd:"
-            echo "$unformatted"
-            exit 1
-          fi
-
-      - name: go vet
-        run: go vet ./...
 
       - name: go build
         run: go build -v ./...
@@ -53,6 +49,52 @@ jobs:
       # stale version table into a failing check instead of silent drift.
       - name: README version table is current
         run: ./scripts/sync-readme-versions.sh --check
+
+  # Also covers gofmt and go vet, which used to be steps in the build job.
+  # Configuration lives in .golangci.yml.
+  golangci-lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+
+  # zizmor audits the workflows for security problems (unpinned actions,
+  # template injection, credential persistence); actionlint checks that they
+  # are valid at all, including shellcheck on every `run:`. Both run offline
+  # from pinned images, so a commit lints the same way on a PR and on its tag.
+  workflows:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            "rhysd/actionlint:${ACTIONLINT_VERSION}" -color
+
+      # Online audits (impostor commits, known-vulnerable actions) need the
+      # GitHub API and would make the result depend on the day it ran.
+      - name: zizmor
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            "ghcr.io/zizmorcore/zizmor:${ZIZMOR_VERSION}" \
+              --offline --format github .
 
   unit:
     name: Unit tests
