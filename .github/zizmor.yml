@@ -1,0 +1,13 @@
+# Every third-party action is pinned to a full commit SHA with a trailing
+# version comment. Dependabot keeps both current.
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "*": hash-pin
+  # Wants `uses: $/...` for in-repo workflows. actionlint (1.7.12) rejects that
+  # syntax, and the only in-repo refs here are job-level reusable-workflow calls,
+  # which resolve from the triggering commit rather than the runner filesystem.
+  # Re-enable once actionlint understands it.
+  self-repository:
+    disable: true

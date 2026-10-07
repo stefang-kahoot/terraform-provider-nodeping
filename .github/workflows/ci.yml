@@ -1,0 +1,151 @@
+name: ci
+
+# The real build and test jobs. Never triggered directly: test.yml calls this on
+# push/PR, and release.yml calls it before goreleaser, so a tagged commit is
+# tested as the tagged commit by the same definition that gates every PR.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27'
+  TERRAFORM_VERSION: '1.14.9'
+
+jobs:
+  build:
+    name: Build & vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build -v ./...
+
+      # A stale go.mod/go.sum breaks reproducible builds; catch it here rather
+      # than during a release.
+      - name: go mod tidy is a no-op
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      # Dependabot can only edit manifests, never the README. This turns a
+      # stale version table into a failing check instead of silent drift.
+      - name: README version table is current
+        run: ./scripts/sync-readme-versions.sh --check
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: go test
+        run: go test -race -covermode=atomic -coverprofile=coverage.out -coverpkg=./... ./...
+
+      - name: Coverage summary
+        run: |
+          go tool cover -func=coverage.out | tail -1
+          {
+            echo '### Coverage'
+            echo '```'
+            go tool cover -func=coverage.out | tail -1
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 14
+
+  acceptance:
+    name: Acceptance tests
+    runs-on: ubuntu-latest
+    # go test below has its own 20m limit; this only adds setup headroom.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # The acceptance tests drive a real terraform binary against an
+      # in-process mock of the NodePing API. No credentials and no network
+      # calls to nodeping.com are involved, so this is safe to run on every PR.
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: go test -run TestAcc
+        env:
+          TF_ACC: '1'
+        run: go test -v -timeout 20m -run 'TestAcc' ./...
+
+  # Both release bugs this repo has shipped (manifest missing from SHA256SUMS,
+  # protocol version undeclared) were valid goreleaser config producing the
+  # wrong artifact set, so `goreleaser check` passes on them. Building a
+  # snapshot and asserting the inventory is what catches that class.
+  snapshot:
+    name: Release snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser derives the snapshot version from the latest tag.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # This job also runs inside release.yml; a cache written by a PR run
+          # must not be able to make the snapshot pass.
+          cache: false
+
+      # Keep `version` in step with release.yml: this job exists to prove the
+      # exact goreleaser that will cut the release.
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.13.3
+          args: release --snapshot --clean --skip=publish,sign
+
+      - name: Release artifact set is complete
+        run: ./scripts/check-release-artifacts.sh dist
