@@ -15,7 +15,8 @@ This is a fork of [phizzl/terraform-provider-nodeping](https://github.com/phizzl
 published as [`stefang-kahoot/nodeping`](https://registry.terraform.io/providers/stefang-kahoot/nodeping/latest).
 It carries fixes found while bringing an existing NodePing estate under
 Terraform and merges upstream's changes as they land. The fixes go upstream as
-pull requests too; those already open are linked below. Over upstream it:
+pull requests too; those already open are linked below. This fork numbers its
+own releases: 0.4.0 is upstream 0.3.2 plus the fixes below. Over upstream it:
 
 - merges `default_tags` into a computed `tags_all` instead of into `tags`, so a
   check with tags of its own can be planned
@@ -51,7 +52,7 @@ terraform {
   required_providers {
     nodeping = {
       source  = "stefang-kahoot/nodeping"
-      version = "~> 1.0"
+      version = "~> 0.4"
     }
   }
 }

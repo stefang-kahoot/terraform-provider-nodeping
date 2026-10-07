@@ -16,7 +16,7 @@ terraform {
   required_providers {
     nodeping = {
       source  = "stefang-kahoot/nodeping"
-      version = "~> 1.0"
+      version = "~> 0.4"
     }
   }
 }
