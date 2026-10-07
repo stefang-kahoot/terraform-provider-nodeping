@@ -516,11 +516,6 @@ This project is licensed under the Mozilla Public License 2.0 - see the [LICENSE
 - [Source Repository](https://github.com/stefang-kahoot/terraform-provider-nodeping)
 - [Upstream](https://github.com/phizzl/terraform-provider-nodeping), which this fork is built on
 
-Most of this provider is the work of its upstream author. If it saves you
-time, you can support that work on Ko-fi:
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/phizzl)
-
 ## Pinned Versions
 
 <!-- versions:start -->
