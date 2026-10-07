@@ -13,7 +13,6 @@
 - [ ] Create `.gitignore` (update existing)
 - [ ] Create `.env.example`
 - [ ] Create `main.go` entry point
-- [ ] Create `tools/tools.go` for tool dependencies
 - [ ] Run `go mod tidy`
 
 ### 4.2 HTTP Client (`internal/client/`)

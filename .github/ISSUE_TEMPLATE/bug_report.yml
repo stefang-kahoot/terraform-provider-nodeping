@@ -1,0 +1,73 @@
+name: Bug report
+description: The provider does something wrong, crashes, or produces a perpetual diff.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report security vulnerabilities privately (see SECURITY.md), not here.
+        Redact API tokens, customer IDs and contact addresses from everything below.
+  - type: input
+    id: provider-version
+    attributes:
+      label: Provider version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: input
+    id: terraform-version
+    attributes:
+      label: Terraform version
+      description: Output of `terraform version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: affected
+    attributes:
+      label: Affected resource or data source
+      multiple: true
+      options:
+        - nodeping_check (resource)
+        - nodeping_contact (resource)
+        - nodeping_contactgroup (resource)
+        - nodeping_check / nodeping_checks (data source)
+        - nodeping_contact / nodeping_contacts (data source)
+        - nodeping_contactgroup / nodeping_contactgroups (data source)
+        - Provider configuration or authentication
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Terraform configuration
+      description: The smallest configuration that reproduces the problem.
+      render: hcl
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the plan or apply output, and the error if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. terraform apply
+        2. terraform plan   # shows a diff although nothing changed
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug output
+      description: Optional. Run with `TF_LOG=DEBUG` and paste the relevant part. Redact secrets first.
+      render: text

@@ -1,0 +1,22 @@
+name: Feature request
+description: A new resource, data source, attribute or check type.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to manage?
+      description: The NodePing feature or API field, and what you are trying to do with it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed configuration
+      description: Optional. How you would like it to look in Terraform.
+      render: hcl
+  - type: input
+    id: api-docs
+    attributes:
+      label: NodePing API reference
+      description: Optional. Link to the relevant part of the NodePing API documentation.

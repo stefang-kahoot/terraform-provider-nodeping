@@ -475,24 +475,27 @@ go build -o terraform-provider-nodeping
 # Unit tests
 go test ./...
 
-# Acceptance tests (requires NODEPING_API_TOKEN)
-TF_ACC=1 go test ./... -v
+# Acceptance tests: a real terraform binary (on PATH) against an in-process
+# mock of the NodePing API. No NodePing account or API token is needed.
+TF_ACC=1 go test -run TestAcc ./...
+
+# The same, in Docker, with the Terraform version pinned in the Dockerfile
+make test-acceptance
 ```
 
 ### Linting
 
 ```bash
-golangci-lint run
-gosec ./...
+make lint
 ```
+
+Runs golangci-lint, at the version CI pins, with the linters configured in
+`.golangci.yml`.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the checks CI runs on pull requests.
+Report security issues as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
