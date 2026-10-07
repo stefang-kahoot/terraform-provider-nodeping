@@ -520,7 +520,7 @@ time, you can support that work on Ko-fi:
 |-----------|---------|------------|
 | Go (toolchain used to build and test) | 1.27 | `Dockerfile`, `.github/workflows/` |
 | Go (minimum required) | 1.26.0 | `go.mod` |
-| Terraform CLI (acceptance tests) | 1.14 | `Dockerfile` |
+| Terraform CLI (acceptance tests) | 1.16.5 | `Dockerfile` |
 | Alpine (runtime image) | 3.24 | `Dockerfile` |
 | terraform-plugin-framework | v1.19.0 | `go.mod` |
 | terraform-plugin-framework-validators | v0.19.0 | `go.mod` |

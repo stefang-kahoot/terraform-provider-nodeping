@@ -23,8 +23,10 @@ env:
   # cannot raise, and upload-sarif fails the job on the resulting 403. Those
   # runs still scan and still gate; they just don't publish to the Security tab.
   CAN_UPLOAD_SARIF: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' }}
+  # Dependabot cannot see these two (it reads `uses:` only), so the pins job
+  # below flags them when upstream moves on.
   GITLEAKS_VERSION: v8.30.1
-  TRIVY_VERSION: 0.74.0
+  TRIVY_VERSION: 0.75.0
 
 jobs:
   secret-scan:
@@ -88,7 +90,7 @@ jobs:
 
       - name: Run govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck ./...
 
   trivy:
@@ -137,3 +139,21 @@ jobs:
               --no-progress \
               --exit-code 1 \
               /repo
+
+  # Tool versions pinned outside any manifest Dependabot reads. Lives here, not
+  # in ci.yml, because ci.yml also gates releases and an upstream release must
+  # not block a tag. Keep it out of the required checks for the same reason.
+  pins:
+    name: Tool pins are current
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: check-pins.sh
+        env:
+          # Lifts the GitHub API limit from 60 to 1000 requests an hour.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./scripts/check-pins.sh

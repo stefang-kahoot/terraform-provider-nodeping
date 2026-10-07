@@ -11,6 +11,11 @@ updates:
       day: monday
       time: "06:00"
       timezone: Europe/Berlin
+    # Skip releases younger than a week: a compromised release is usually
+    # yanked within days, and Dependabot would otherwise propose it within
+    # minutes. scripts/check-pins.sh uses the same window.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: deps
@@ -39,6 +44,8 @@ updates:
       day: monday
       time: "06:00"
       timezone: Europe/Berlin
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: ci
@@ -52,8 +59,8 @@ updates:
           - minor
           - patch
 
-  # The Dockerfile pins golang, alpine and the terraform image it copies the
-  # binary from. Without this they silently rot.
+  # The Dockerfile pins golang, alpine and the terraform stage (which ci.yml
+  # also reads for setup-terraform). Without this they silently rot.
   - package-ecosystem: docker
     directory: /
     schedule:
@@ -61,6 +68,8 @@ updates:
       day: monday
       time: "06:00"
       timezone: Europe/Berlin
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 3
     commit-message:
       prefix: build

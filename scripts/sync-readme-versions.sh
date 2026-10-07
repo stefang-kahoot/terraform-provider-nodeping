@@ -40,6 +40,27 @@ for pair in "go_min:$go_min" "go_toolchain:$go_toolchain" "alpine:$alpine" \
 	[ -n "$value" ] || fail "could not determine $name"
 done
 
+# --- the toolchain is pinned in more places than the table can show ---------
+# The README names one Go toolchain, so every copy has to agree with the
+# Dockerfile. Dependabot only bumps the Dockerfile; this catches the rest.
+mismatch=
+for v in $(sed -n 's/^FROM golang:\([0-9][0-9.]*\)-alpine.*/\1/p' Dockerfile); do
+	[ "$v" = "$go_toolchain" ] || mismatch="$mismatch
+  Dockerfile: golang:$v"
+done
+for f in .github/workflows/*.yml; do
+	for v in $(sed -n \
+		-e "s/^ *GO_VERSION: *'\{0,1\}\([0-9][0-9.]*\)'\{0,1\} *$/\1/p" \
+		-e "s/^ *go-version: *'\{0,1\}\([0-9][0-9.]*\)'\{0,1\} *$/\1/p" "$f"); do
+		[ "$v" = "$go_toolchain" ] || mismatch="$mismatch
+  $f: $v"
+	done
+done
+make_go=$(sed -n 's/^GO_VERSION := *//p' Makefile)
+[ "$make_go" = "$go_toolchain" ] || mismatch="$mismatch
+  Makefile: GO_VERSION := $make_go"
+[ -z "$mismatch" ] || fail "Go toolchain is $go_toolchain in the Dockerfile builder, but:$mismatch"
+
 # --- render the table ------------------------------------------------------
 table=$(cat <<EOF
 $START
