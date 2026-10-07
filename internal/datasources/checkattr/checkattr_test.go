@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -444,9 +445,78 @@ func TestNotifications(t *testing.T) {
 			},
 		},
 		{
-			name: "entries that are not objects are skipped",
+			// Older checks store the schedule itself in place of the object,
+			// with no delay. Reading it as no notification made an import
+			// claim that nobody is told when the check fails.
+			name: "short form is the schedule with no delay",
 			in: []map[string]interface{}{
-				{"CONTACT-1": "not-an-object"},
+				{"CONTACT-1": "All"},
+				{"CONTACT-2": "Nights"},
+			},
+			want: []NotificationModel{
+				{ContactID: types.StringValue("CONTACT-1"), Delay: types.Int64Value(0), Schedule: types.StringValue("All")},
+				{ContactID: types.StringValue("CONTACT-2"), Delay: types.Int64Value(0), Schedule: types.StringValue("Nights")},
+			},
+		},
+		{
+			name: "empty short form falls back to All",
+			in: []map[string]interface{}{
+				{"CONTACT-1": ""},
+			},
+			want: []NotificationModel{
+				{ContactID: types.StringValue("CONTACT-1"), Delay: types.Int64Value(0), Schedule: types.StringValue("All")},
+			},
+		},
+		{
+			// Both shapes in one check keep the API's outer order, and the
+			// keys inside one entry are still sorted.
+			name: "short and object forms mix in one check",
+			in: []map[string]interface{}{
+				{"ZZZ": "Days"},
+				{"MMM": map[string]interface{}{"delay": float64(5), "schedule": "Nights"}},
+				{
+					"BBB": map[string]interface{}{"delay": float64(1), "schedule": "All"},
+					"AAA": "Weekends",
+				},
+			},
+			want: []NotificationModel{
+				{ContactID: types.StringValue("ZZZ"), Delay: types.Int64Value(0), Schedule: types.StringValue("Days")},
+				{ContactID: types.StringValue("MMM"), Delay: types.Int64Value(5), Schedule: types.StringValue("Nights")},
+				{ContactID: types.StringValue("AAA"), Delay: types.Int64Value(0), Schedule: types.StringValue("Weekends")},
+				{ContactID: types.StringValue("BBB"), Delay: types.Int64Value(1), Schedule: types.StringValue("All")},
+			},
+		},
+		{
+			// The short form and the object form with delay 0 are the same
+			// notification, so the second is a duplicate.
+			name: "short form deduplicates against the equivalent object",
+			in: []map[string]interface{}{
+				{"CONTACT-1": "All"},
+				{"CONTACT-1": map[string]interface{}{"delay": float64(0), "schedule": "All"}},
+				{"CONTACT-1": ""},
+			},
+			want: []NotificationModel{
+				{ContactID: types.StringValue("CONTACT-1"), Delay: types.Int64Value(0), Schedule: types.StringValue("All")},
+			},
+		},
+		{
+			name: "short form does not swallow an object with a different delay",
+			in: []map[string]interface{}{
+				{"CONTACT-1": "All"},
+				{"CONTACT-1": map[string]interface{}{"delay": float64(5), "schedule": "All"}},
+			},
+			want: []NotificationModel{
+				{ContactID: types.StringValue("CONTACT-1"), Delay: types.Int64Value(0), Schedule: types.StringValue("All")},
+				{ContactID: types.StringValue("CONTACT-1"), Delay: types.Int64Value(5), Schedule: types.StringValue("All")},
+			},
+		},
+		{
+			name: "values that are neither an object nor a string are skipped",
+			in: []map[string]interface{}{
+				{"CONTACT-1": nil},
+				{"CONTACT-2": float64(0)},
+				{"CONTACT-3": true},
+				{"CONTACT-4": []interface{}{"All"}},
 			},
 			want: nil,
 		},
@@ -472,5 +542,36 @@ func TestNotifications(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A header NodePing stores as null is absent, so a check whose only header is
+// null reads back with no sendheaders at all rather than {"Host" = ""}.
+func TestFromAPIReadsNullHeadersAsAbsent(t *testing.T) {
+	t.Parallel()
+
+	var check client.Check
+	body := `{"_id": "CHK1", "type": "HTTPADV", "parameters": {
+		"sendheaders": {"Host": null},
+		"receiveheaders": {"Server": null, "Content-Type": "text/html"}
+	}}`
+	if err := json.Unmarshal([]byte(body), &check); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	var diags diag.Diagnostics
+	m := FromAPI(context.Background(), &check, &diags)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %+v", diags)
+	}
+
+	if !m.SendHeaders.IsNull() {
+		t.Errorf("SendHeaders = %v, want null", m.SendHeaders)
+	}
+	want := types.MapValueMust(types.StringType, map[string]attr.Value{
+		"Content-Type": types.StringValue("text/html"),
+	})
+	if !m.ReceiveHeaders.Equal(want) {
+		t.Errorf("ReceiveHeaders = %v, want %v", m.ReceiveHeaders, want)
 	}
 }

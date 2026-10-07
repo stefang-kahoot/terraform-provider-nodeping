@@ -204,6 +204,72 @@ resource "nodeping_check" "imported" {
 	})
 }
 
+// Older checks store a notification in a short form, the contact mapped
+// straight to its schedule ({"<contact>": "All"}) with no delay. Read as no
+// notification at all, such a check could only be imported with a plan that
+// writes, or with a configuration falsely claiming nobody is notified. The
+// check is seeded the way NodePing returns one, and the configuration says
+// what NodePing says, so the import must plan nothing.
+func TestAccCheckResource_importReadsShortFormNotifications(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	mock.AddCheck("LEGACY-NOTIFY", map[string]interface{}{
+		"_id":      "LEGACY-NOTIFY",
+		"type":     "SSL",
+		"label":    "acc-legacy-notifications",
+		"enable":   "active",
+		"interval": 60,
+		"notifications": []interface{}{
+			map[string]interface{}{"CONTACT-SHORT": "All"},
+			map[string]interface{}{"CONTACT-OBJECT": map[string]interface{}{"delay": 5, "schedule": "Nights"}},
+		},
+		"parameters": map[string]interface{}{
+			"target":      "https://example.com/",
+			"threshold":   10,
+			"sens":        2,
+			"warningdays": 30,
+		},
+	})
+
+	config := providerConfig(mock.URL()) + `
+resource "nodeping_check" "imported" {
+  type        = "SSL"
+  target      = "https://example.com/"
+  enabled     = true
+  interval    = 60
+  threshold   = 10
+  sens        = 2
+  warningdays = 30
+
+  notifications {
+    contact_id = "CONTACT-SHORT"
+    delay      = 0
+    schedule   = "All"
+  }
+
+  notifications {
+    contact_id = "CONTACT-OBJECT"
+    delay      = 5
+    schedule   = "Nights"
+  }
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config:          config,
+				ResourceName:    "nodeping_check.imported",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithID,
+				ImportStateId:   "LEGACY-NOTIFY",
+			},
+		},
+	})
+}
+
 func TestAccContactResource_importRoundTrips(t *testing.T) {
 	mock := testutil.NewMockNodePingServer()
 	t.Cleanup(mock.Close)
@@ -328,6 +394,78 @@ resource "nodeping_contactgroup" "imported" {
 				ResourceName:      "nodeping_contactgroup.imported",
 				ImportState:       true,
 				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+// NodePing stores some headers as null -- {"Host": null} -- meaning no such
+// header. Read as "", the check could not be imported without a plan: leaving
+// sendheaders out planned {"Host" = ""} -> null, and { "Host" = null } an
+// update with no visible difference. Only { "Host" = "" } planned clean, and
+// that would write an empty Host header on the next apply. With the null
+// dropped on read, a check whose only header is null has no sendheaders.
+func TestAccCheckResource_importReadsNullHeadersAsAbsent(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	mock.AddCheck("NULL-HEADER", map[string]interface{}{
+		"_id":      "NULL-HEADER",
+		"type":     "HTTPADV",
+		"label":    "acc-null-header",
+		"enable":   "active",
+		"interval": 1,
+		"notifications": []interface{}{
+			map[string]interface{}{"CONTACT-1": map[string]interface{}{"delay": 0, "schedule": "All"}},
+		},
+		"parameters": map[string]interface{}{
+			"target":         "https://example.com/status",
+			"threshold":      10,
+			"sens":           2,
+			"method":         "GET",
+			"statuscode":     200,
+			"follow":         false,
+			"invert":         false,
+			"ipv6":           false,
+			"contentstring":  "",
+			"postdata":       "",
+			"data":           map[string]interface{}{},
+			"sendheaders":    map[string]interface{}{"Host": nil},
+			"receiveheaders": map[string]interface{}{"Server": nil},
+		},
+	})
+
+	config := providerConfig(mock.URL()) + `
+resource "nodeping_check" "imported" {
+  type       = "HTTPADV"
+  target     = "https://example.com/status"
+  enabled    = true
+  interval   = 1
+  threshold  = 10
+  sens       = 2
+  method     = "GET"
+  statuscode = 200
+  follow     = false
+  invert     = false
+  ipv6       = false
+
+  notifications {
+    contact_id = "CONTACT-1"
+    delay      = 0
+    schedule   = "All"
+  }
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config:          config,
+				ResourceName:    "nodeping_check.imported",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithID,
+				ImportStateId:   "NULL-HEADER",
 			},
 		},
 	})
