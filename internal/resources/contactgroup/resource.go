@@ -2,6 +2,7 @@ package contactgroup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -151,7 +152,7 @@ func (r *ContactGroupResource) Read(ctx context.Context, req resource.ReadReques
 	if err != nil {
 		// A group deleted outside Terraform must drop out of state rather than
 		// fail the plan.
-		if _, ok := err.(*client.NotFoundError); ok {
+		if _, ok := errors.AsType[*client.NotFoundError](err); ok {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -235,7 +236,7 @@ func (r *ContactGroupResource) Delete(ctx context.Context, req resource.DeleteRe
 
 	err := r.client.DeleteContactGroup(ctx, state.ID.ValueString())
 	if err != nil {
-		if _, ok := err.(*client.NotFoundError); ok {
+		if _, ok := errors.AsType[*client.NotFoundError](err); ok {
 			return
 		}
 		resp.Diagnostics.AddError(

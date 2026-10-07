@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,7 +34,7 @@ func TestListContacts(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(contacts)
+		_ = json.NewEncoder(w).Encode(contacts)
 	}))
 	defer server.Close()
 
@@ -75,7 +76,7 @@ func TestGetContact(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(contact)
+		_ = json.NewEncoder(w).Encode(contact)
 	}))
 	defer server.Close()
 
@@ -97,7 +98,7 @@ func TestGetContact(t *testing.T) {
 func TestGetContactNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Contact not found"})
+		_ = json.NewEncoder(w).Encode(ErrorResponse{Error: "Contact not found"})
 	}))
 	defer server.Close()
 
@@ -111,7 +112,7 @@ func TestGetContactNotFound(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	_, ok := err.(*NotFoundError)
+	_, ok := errors.AsType[*NotFoundError](err)
 	if !ok {
 		t.Errorf("expected *NotFoundError, got %T", err)
 	}
@@ -140,7 +141,7 @@ func TestCreateContact(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(contact)
+		_ = json.NewEncoder(w).Encode(contact)
 	}))
 	defer server.Close()
 
@@ -176,7 +177,7 @@ func TestUpdateContact(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(contact)
+		_ = json.NewEncoder(w).Encode(contact)
 	}))
 	defer server.Close()
 
@@ -205,7 +206,7 @@ func TestDeleteContact(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(DeleteResponse{OK: true, ID: "201205050153W2Q4C-BKPGH"})
+		_ = json.NewEncoder(w).Encode(DeleteResponse{OK: true, ID: "201205050153W2Q4C-BKPGH"})
 	}))
 	defer server.Close()
 

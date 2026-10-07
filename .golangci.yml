@@ -1,0 +1,27 @@
+version: "2"
+
+# The standard set, plus two linters that pay their way here. CI runs this via
+# ci.yml; `make lint` runs the same version locally.
+linters:
+  default: standard
+  enable:
+    # *APIError and *NotFoundError are matched by type all over the client and
+    # resources; a bare type assertion silently misses them once wrapped.
+    - errorlint
+    - gosec
+  settings:
+    gosec:
+      excludes:
+        # math/rand is only used for retry jitter in calculateBackoff, which
+        # needs no cryptographic randomness.
+        - G404
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  # The defaults (3 per linter, 50 in total) hide the rest of a backlog, so a
+  # run that looks like 12 findings can really be 50.
+  max-issues-per-linter: 0
+  max-same-issues: 0

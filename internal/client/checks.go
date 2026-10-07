@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,7 +27,7 @@ func (c *Client) GetCheck(ctx context.Context, id string) (*Check, error) {
 		path:   "/checks/" + url.PathEscape(id),
 	}, &result)
 	if err != nil {
-		if apiErr, ok := err.(*APIError); ok && apiErr.IsNotFound() {
+		if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.IsNotFound() {
 			return nil, &NotFoundError{ResourceType: "check", ResourceID: id}
 		}
 		return nil, fmt.Errorf("failed to get check: %w", err)

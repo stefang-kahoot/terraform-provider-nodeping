@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -140,7 +140,7 @@ func (c *Client) doRequest(ctx context.Context, opts requestOptions, result inte
 
 		lastErr = err
 
-		if apiErr, ok := err.(*APIError); ok {
+		if apiErr, ok := errors.AsType[*APIError](err); ok {
 			if !apiErr.IsRetryable() {
 				return err
 			}
@@ -197,7 +197,7 @@ func (c *Client) executeRequest(ctx context.Context, opts requestOptions, result
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -240,15 +240,4 @@ func (c *Client) calculateBackoff(attempt int) time.Duration {
 
 	jitter := rand.Float64() * 0.3 * backoff
 	return time.Duration(backoff + jitter)
-}
-
-func boolToString(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
-}
-
-func intToString(i int) string {
-	return strconv.Itoa(i)
 }

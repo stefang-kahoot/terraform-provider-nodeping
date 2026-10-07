@@ -202,17 +202,17 @@ func (p *NodePingProvider) Configure(ctx context.Context, req provider.Configure
 		rateLimit = config.RateLimit.ValueFloat64()
 	}
 
-	var maxRetries int = client.DefaultMaxRetries
+	maxRetries := client.DefaultMaxRetries
 	if !config.MaxRetries.IsNull() {
 		maxRetries = int(config.MaxRetries.ValueInt64())
 	}
 
-	var retryWaitMin time.Duration = client.DefaultRetryMinWait
+	retryWaitMin := client.DefaultRetryMinWait
 	if !config.RetryWaitMin.IsNull() {
 		retryWaitMin = time.Duration(config.RetryWaitMin.ValueInt64()) * time.Second
 	}
 
-	var retryWaitMax time.Duration = client.DefaultRetryMaxWait
+	retryWaitMax := client.DefaultRetryMaxWait
 	if !config.RetryWaitMax.IsNull() {
 		retryWaitMax = time.Duration(config.RetryWaitMax.ValueInt64()) * time.Second
 	}

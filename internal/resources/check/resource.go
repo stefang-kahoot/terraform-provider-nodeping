@@ -2,6 +2,7 @@ package check
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -124,7 +125,7 @@ func (r *CheckResource) Read(ctx context.Context, req resource.ReadRequest, resp
 
 	check, err := r.client.GetCheck(ctx, state.ID.ValueString())
 	if err != nil {
-		if _, ok := err.(*client.NotFoundError); ok {
+		if _, ok := errors.AsType[*client.NotFoundError](err); ok {
 			tflog.Debug(ctx, "Check not found, removing from state", map[string]interface{}{
 				"id": state.ID.ValueString(),
 			})
@@ -238,7 +239,7 @@ func (r *CheckResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 
 	err := r.client.DeleteCheck(ctx, state.ID.ValueString())
 	if err != nil {
-		if _, ok := err.(*client.NotFoundError); ok {
+		if _, ok := errors.AsType[*client.NotFoundError](err); ok {
 			return
 		}
 		resp.Diagnostics.AddError(
