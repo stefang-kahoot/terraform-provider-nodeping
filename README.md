@@ -35,8 +35,8 @@ A Terraform provider for managing [NodePing](https://nodeping.com/) monitoring r
 terraform {
   required_providers {
     nodeping = {
-      source  = "phizzl/nodeping"
-      version = "~> 0.3"
+      source  = "stefang-kahoot/nodeping"
+      version = "~> 1.0"
     }
   }
 }

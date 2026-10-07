@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     nodeping = {
-      source = "registry.terraform.io/phizzl/nodeping"
+      source = "registry.terraform.io/stefang-kahoot/nodeping"
     }
   }
 }

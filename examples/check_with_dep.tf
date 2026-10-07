@@ -6,8 +6,8 @@
 terraform {
   required_providers {
     nodeping = {
-      source  = "phizzl/nodeping"
-      version = "~> 0.2"
+      source  = "stefang-kahoot/nodeping"
+      version = "~> 1.0"
     }
   }
 }
