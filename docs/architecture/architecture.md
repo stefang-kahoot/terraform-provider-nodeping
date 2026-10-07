@@ -104,11 +104,9 @@ terraform-provider-nodeping/
 │       └── checks/
 │           ├── data_source.go
 │           └── schema.go
-├── testutil/
-│   ├── mock_server.go            # Mock NodePing API server
-│   └── fixtures/                 # Test fixtures
-└── tools/
-    └── tools.go                  # Tool dependencies
+└── testutil/
+    ├── mock_server.go            # Mock NodePing API server
+    └── fixtures/                 # Test fixtures
 ```
 
 ---
