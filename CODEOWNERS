@@ -1,26 +1,23 @@
 # CODEOWNERS for terraform-provider-nodeping
-# These owners will be requested for review when someone opens a merge request
+# These owners will be requested for review when someone opens a pull request
 
 # Default owners for everything in the repo
-* @maintainers
+* @stefang-kahoot
 
 # Provider core
-/internal/provider/ @maintainers
-/internal/client/ @maintainers
+/internal/provider/ @stefang-kahoot
+/internal/client/ @stefang-kahoot
 
 # Resources
-/internal/resources/ @maintainers
+/internal/resources/ @stefang-kahoot
 
 # Data sources
-/internal/datasources/ @maintainers
+/internal/datasources/ @stefang-kahoot
 
 # Documentation
-/docs/ @maintainers
-README.md @maintainers
-
-# CI/CD
-.gitlab-ci.yml @maintainers
+/docs/ @stefang-kahoot
+README.md @stefang-kahoot
 
 # Security-sensitive files
-go.mod @maintainers
-go.sum @maintainers
+go.mod @stefang-kahoot
+go.sum @stefang-kahoot
