@@ -33,13 +33,17 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 ENTRYPOINT ["./terraform-provider-nodeping"]
 
+# The acceptance tests drive a real terraform binary. Taking it from the
+# official image keeps the version pinned and avoids terraform-plugin-testing
+# downloading a different one at run time. It is a named stage rather than
+# `COPY --from=<image>` because Dependabot only reads `FROM` lines. Pin a full
+# patch version: ci.yml reads it from here for setup-terraform.
+FROM hashicorp/terraform:1.16.5 AS terraform
+
 FROM golang:1.27-alpine AS test
 # build-base supplies the C toolchain the race detector needs.
 RUN apk add --no-cache git build-base
-# The acceptance tests drive a real terraform binary. Taking it from the
-# official image keeps the version pinned and avoids terraform-plugin-testing
-# downloading a different one at run time.
-COPY --from=hashicorp/terraform:1.14 /bin/terraform /usr/local/bin/terraform
+COPY --from=terraform /bin/terraform /usr/local/bin/terraform
 ENV TF_ACC_TERRAFORM_PATH=/usr/local/bin/terraform
 WORKDIR /app
 COPY go.mod go.sum ./
