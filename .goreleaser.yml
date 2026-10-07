@@ -7,7 +7,8 @@ before:
     - go mod tidy
 
 builds:
-  - binary: terraform-provider-nodeping
+  # The Registry expects the binary inside each zip to carry the version.
+  - binary: "{{ .ProjectName }}_v{{ .Version }}"
     env:
       - CGO_ENABLED=0
     goos: [linux, darwin, windows]
@@ -26,7 +27,12 @@ release:
     - glob: terraform-registry-manifest.json
       name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
 
+# The Registry requires SHA256SUMS to cover the manifest as well as the zips.
+# Upstream's v0.3.2 was released without it and never appeared there.
 checksum:
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
   name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
 
 signs:
