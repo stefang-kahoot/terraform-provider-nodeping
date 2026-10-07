@@ -16,7 +16,8 @@ published as [`stefang-kahoot/nodeping`](https://registry.terraform.io/providers
 It carries fixes found while bringing an existing NodePing estate under
 Terraform and merges upstream's changes as they land. The fixes go upstream as
 pull requests too; those already open are linked below. This fork numbers its
-own releases: 0.4.0 is upstream 0.3.2 plus the fixes below. Over upstream it:
+own releases: 0.4.0 is upstream 0.3.2 plus the first three fixes below, and
+0.4.1 adds the rest. Over upstream it:
 
 - merges `default_tags` into a computed `tags_all` instead of into `tags`, so a
   check with tags of its own can be planned
@@ -26,7 +27,10 @@ own releases: 0.4.0 is upstream 0.3.2 plus the fixes below. Over upstream it:
   ([phizzl#8](https://github.com/phizzl/terraform-provider-nodeping/pull/8));
 - reads back the ten check attributes upstream leaves unmapped on import and
   refresh -- `postdata`, `homeloc` and MYSQL, SMTP, DNS and SNMP parameters --
-  and keeps a planned value when the API leaves it out.
+  and keeps a planned value when the API leaves it out;
+- reads the short form older checks store a notification in,
+  `{"<contact>": "All"}`, as that schedule with no delay instead of dropping
+  it, so such a check no longer reads as notifying nobody.
 
 ## Features
 

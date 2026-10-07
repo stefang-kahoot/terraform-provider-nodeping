@@ -409,6 +409,8 @@ func FromAPI(ctx context.Context, check *client.Check, diags *diag.Diagnostics) 
 
 // notifications flattens the API shape, which is a list of single-entry maps
 // keyed by contact ID: [{"CONTACT-1": {"delay": 0, "schedule": "All"}}].
+// Older checks store the short form {"CONTACT-1": "All"} instead, the value
+// being the schedule and the delay implicitly 0; see notificationSetting.
 //
 // The outer list order is the API's and is preserved. The inner map is sorted
 // by contact ID, because Go randomises map iteration and an entry with more
@@ -430,19 +432,9 @@ func notifications(raw []map[string]interface{}) []NotificationModel {
 		sort.Strings(contactIDs)
 
 		for _, contactID := range contactIDs {
-			cfg, ok := entry[contactID].(map[string]interface{})
+			delay, schedule, ok := notificationSetting(entry[contactID])
 			if !ok {
 				continue
-			}
-
-			delay := OptionalInt64(cfg["delay"])
-			if delay.IsNull() {
-				delay = types.Int64Value(0)
-			}
-
-			schedule := "All"
-			if s, ok := cfg["schedule"].(string); ok && s != "" {
-				schedule = s
 			}
 
 			key := fmt.Sprintf("%s:%d:%s", contactID, delay.ValueInt64(), schedule)
@@ -463,4 +455,29 @@ func notifications(raw []map[string]interface{}) []NotificationModel {
 		return nil
 	}
 	return out
+}
+
+// notificationSetting reads one contact's setting in either shape NodePing
+// stores: the object {"delay": 0, "schedule": "All"}, or the short form older
+// checks carry, where the value is the schedule itself and there is no delay.
+// A missing delay is 0 and a missing or empty schedule is "All", NodePing's
+// own defaults. ok is false for any other value, which is skipped.
+func notificationSetting(v interface{}) (delay types.Int64, schedule string, ok bool) {
+	switch cfg := v.(type) {
+	case map[string]interface{}:
+		delay = OptionalInt64(cfg["delay"])
+		schedule, _ = cfg["schedule"].(string)
+	case string:
+		delay, schedule = types.Int64Value(0), cfg
+	default:
+		return types.Int64Null(), "", false
+	}
+
+	if delay.IsNull() {
+		delay = types.Int64Value(0)
+	}
+	if schedule == "" {
+		schedule = "All"
+	}
+	return delay, schedule, true
 }

@@ -204,6 +204,72 @@ resource "nodeping_check" "imported" {
 	})
 }
 
+// Older checks store a notification in a short form, the contact mapped
+// straight to its schedule ({"<contact>": "All"}) with no delay. Read as no
+// notification at all, such a check could only be imported with a plan that
+// writes, or with a configuration falsely claiming nobody is notified. The
+// check is seeded the way NodePing returns one, and the configuration says
+// what NodePing says, so the import must plan nothing.
+func TestAccCheckResource_importReadsShortFormNotifications(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	mock.AddCheck("LEGACY-NOTIFY", map[string]interface{}{
+		"_id":      "LEGACY-NOTIFY",
+		"type":     "SSL",
+		"label":    "acc-legacy-notifications",
+		"enable":   "active",
+		"interval": 60,
+		"notifications": []interface{}{
+			map[string]interface{}{"CONTACT-SHORT": "All"},
+			map[string]interface{}{"CONTACT-OBJECT": map[string]interface{}{"delay": 5, "schedule": "Nights"}},
+		},
+		"parameters": map[string]interface{}{
+			"target":      "https://example.com/",
+			"threshold":   10,
+			"sens":        2,
+			"warningdays": 30,
+		},
+	})
+
+	config := providerConfig(mock.URL()) + `
+resource "nodeping_check" "imported" {
+  type        = "SSL"
+  target      = "https://example.com/"
+  enabled     = true
+  interval    = 60
+  threshold   = 10
+  sens        = 2
+  warningdays = 30
+
+  notifications {
+    contact_id = "CONTACT-SHORT"
+    delay      = 0
+    schedule   = "All"
+  }
+
+  notifications {
+    contact_id = "CONTACT-OBJECT"
+    delay      = 5
+    schedule   = "Nights"
+  }
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config:          config,
+				ResourceName:    "nodeping_check.imported",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithID,
+				ImportStateId:   "LEGACY-NOTIFY",
+			},
+		},
+	})
+}
+
 func TestAccContactResource_importRoundTrips(t *testing.T) {
 	mock := testutil.NewMockNodePingServer()
 	t.Cleanup(mock.Close)
