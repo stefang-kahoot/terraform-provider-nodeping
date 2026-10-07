@@ -398,3 +398,75 @@ resource "nodeping_contactgroup" "imported" {
 		},
 	})
 }
+
+// NodePing stores some headers as null -- {"Host": null} -- meaning no such
+// header. Read as "", the check could not be imported without a plan: leaving
+// sendheaders out planned {"Host" = ""} -> null, and { "Host" = null } an
+// update with no visible difference. Only { "Host" = "" } planned clean, and
+// that would write an empty Host header on the next apply. With the null
+// dropped on read, a check whose only header is null has no sendheaders.
+func TestAccCheckResource_importReadsNullHeadersAsAbsent(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	mock.AddCheck("NULL-HEADER", map[string]interface{}{
+		"_id":      "NULL-HEADER",
+		"type":     "HTTPADV",
+		"label":    "acc-null-header",
+		"enable":   "active",
+		"interval": 1,
+		"notifications": []interface{}{
+			map[string]interface{}{"CONTACT-1": map[string]interface{}{"delay": 0, "schedule": "All"}},
+		},
+		"parameters": map[string]interface{}{
+			"target":         "https://example.com/status",
+			"threshold":      10,
+			"sens":           2,
+			"method":         "GET",
+			"statuscode":     200,
+			"follow":         false,
+			"invert":         false,
+			"ipv6":           false,
+			"contentstring":  "",
+			"postdata":       "",
+			"data":           map[string]interface{}{},
+			"sendheaders":    map[string]interface{}{"Host": nil},
+			"receiveheaders": map[string]interface{}{"Server": nil},
+		},
+	})
+
+	config := providerConfig(mock.URL()) + `
+resource "nodeping_check" "imported" {
+  type       = "HTTPADV"
+  target     = "https://example.com/status"
+  enabled    = true
+  interval   = 1
+  threshold  = 10
+  sens       = 2
+  method     = "GET"
+  statuscode = 200
+  follow     = false
+  invert     = false
+  ipv6       = false
+
+  notifications {
+    contact_id = "CONTACT-1"
+    delay      = 0
+    schedule   = "All"
+  }
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config:          config,
+				ResourceName:    "nodeping_check.imported",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithID,
+				ImportStateId:   "NULL-HEADER",
+			},
+		},
+	})
+}

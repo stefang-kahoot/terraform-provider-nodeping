@@ -120,8 +120,8 @@ type CheckParameters struct {
 	Follow         interface{}           `json:"follow,omitempty"`
 	Method         string                `json:"method,omitempty"`
 	StatusCode     interface{}           `json:"statuscode,omitempty"`
-	SendHeaders    map[string]string     `json:"sendheaders,omitempty"`
-	ReceiveHeaders map[string]string     `json:"receiveheaders,omitempty"`
+	SendHeaders    HeaderMap             `json:"sendheaders,omitempty"`
+	ReceiveHeaders HeaderMap             `json:"receiveheaders,omitempty"`
 	Data           interface{}           `json:"data,omitempty"`
 	PostData       string                `json:"postdata,omitempty"`
 	Port           interface{}           `json:"port,omitempty"`
@@ -158,6 +158,36 @@ type CheckParameters struct {
 	SNMPCom        string                `json:"snmpcom,omitempty"`
 	VerifyVolume   interface{}           `json:"verifyvolume,omitempty"`
 	VolumeMin      interface{}           `json:"volumemin,omitempty"`
+}
+
+// HeaderMap is a check's sendheaders or receiveheaders as the API returns
+// them. NodePing stores some headers as null -- {"Host": null} -- meaning no
+// such header; a plain map[string]string would decode that as "", and the
+// check would read back as sending an empty Host header. Null entries are
+// dropped instead, so a map holding nothing else reads as no headers at all.
+// An empty string is a value and is kept. Requests keep a plain map: only
+// reading changes.
+type HeaderMap map[string]string
+
+// UnmarshalJSON decodes a JSON object of strings, leaving out the null ones.
+func (h *HeaderMap) UnmarshalJSON(data []byte) error {
+	var raw map[string]*string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw == nil {
+		*h = nil
+		return nil
+	}
+
+	out := make(HeaderMap, len(raw))
+	for name, value := range raw {
+		if value != nil {
+			out[name] = *value
+		}
+	}
+	*h = out
+	return nil
 }
 
 type CheckField struct {

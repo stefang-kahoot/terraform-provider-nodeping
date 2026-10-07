@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -541,5 +542,36 @@ func TestNotifications(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A header NodePing stores as null is absent, so a check whose only header is
+// null reads back with no sendheaders at all rather than {"Host" = ""}.
+func TestFromAPIReadsNullHeadersAsAbsent(t *testing.T) {
+	t.Parallel()
+
+	var check client.Check
+	body := `{"_id": "CHK1", "type": "HTTPADV", "parameters": {
+		"sendheaders": {"Host": null},
+		"receiveheaders": {"Server": null, "Content-Type": "text/html"}
+	}}`
+	if err := json.Unmarshal([]byte(body), &check); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	var diags diag.Diagnostics
+	m := FromAPI(context.Background(), &check, &diags)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %+v", diags)
+	}
+
+	if !m.SendHeaders.IsNull() {
+		t.Errorf("SendHeaders = %v, want null", m.SendHeaders)
+	}
+	want := types.MapValueMust(types.StringType, map[string]attr.Value{
+		"Content-Type": types.StringValue("text/html"),
+	})
+	if !m.ReceiveHeaders.Equal(want) {
+		t.Errorf("ReceiveHeaders = %v, want %v", m.ReceiveHeaders, want)
 	}
 }

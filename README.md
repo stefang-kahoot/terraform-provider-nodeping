@@ -30,7 +30,10 @@ own releases: 0.4.0 is upstream 0.3.2 plus the first three fixes below, and
   and keeps a planned value when the API leaves it out;
 - reads the short form older checks store a notification in,
   `{"<contact>": "All"}`, as that schedule with no delay instead of dropping
-  it, so such a check no longer reads as notifying nobody.
+  it, so such a check no longer reads as notifying nobody;
+- reads a `sendheaders` or `receiveheaders` entry NodePing stores as `null`,
+  such as `{"Host": null}`, as no header rather than an empty one, so a check
+  whose only header is null reads with no `sendheaders` at all.
 
 ## Features
 
