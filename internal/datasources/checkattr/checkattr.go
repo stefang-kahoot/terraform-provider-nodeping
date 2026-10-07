@@ -27,7 +27,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/nodeping/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
 )
 
 // Model is the full read-back shape of a check. Field names and tfsdk tags

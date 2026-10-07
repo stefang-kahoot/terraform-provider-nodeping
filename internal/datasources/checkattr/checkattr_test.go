@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/nodeping/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
 )
 
 func TestBool(t *testing.T) {

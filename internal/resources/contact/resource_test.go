@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
 
-	"github.com/nodeping/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
 )
 
 func TestNormalizeJSONString(t *testing.T) {

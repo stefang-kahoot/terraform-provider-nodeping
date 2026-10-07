@@ -11,8 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	"github.com/nodeping/terraform-provider-nodeping/internal/client"
-	"github.com/nodeping/terraform-provider-nodeping/internal/datasources/checkattr"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/checkattr"
 )
 
 var (

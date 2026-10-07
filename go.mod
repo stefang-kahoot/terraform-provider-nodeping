@@ -1,4 +1,4 @@
-module github.com/nodeping/terraform-provider-nodeping
+module github.com/stefang-kahoot/terraform-provider-nodeping
 
 go 1.26.0
 

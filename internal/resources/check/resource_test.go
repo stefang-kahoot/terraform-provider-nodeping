@@ -9,7 +9,7 @@ import (
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/nodeping/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
 )
 
 // The boolean decoding this package used to carry its own copy of now lives

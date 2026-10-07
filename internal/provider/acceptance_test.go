@@ -9,8 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 
-	"github.com/nodeping/terraform-provider-nodeping/internal/provider"
-	"github.com/nodeping/terraform-provider-nodeping/testutil"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/provider"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/testutil"
 )
 
 // These tests drive a real `terraform plan`/`apply` cycle against an in-process

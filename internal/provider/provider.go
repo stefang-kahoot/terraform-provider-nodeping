@@ -13,16 +13,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	"github.com/nodeping/terraform-provider-nodeping/internal/client"
-	"github.com/nodeping/terraform-provider-nodeping/internal/datasources/check"
-	"github.com/nodeping/terraform-provider-nodeping/internal/datasources/checks"
-	"github.com/nodeping/terraform-provider-nodeping/internal/datasources/contact"
-	"github.com/nodeping/terraform-provider-nodeping/internal/datasources/contactgroup"
-	"github.com/nodeping/terraform-provider-nodeping/internal/datasources/contactgroups"
-	"github.com/nodeping/terraform-provider-nodeping/internal/datasources/contacts"
-	checkresource "github.com/nodeping/terraform-provider-nodeping/internal/resources/check"
-	contactresource "github.com/nodeping/terraform-provider-nodeping/internal/resources/contact"
-	contactgroupresource "github.com/nodeping/terraform-provider-nodeping/internal/resources/contactgroup"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/check"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/checks"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/contact"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/contactgroup"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/contactgroups"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/contacts"
+	checkresource "github.com/stefang-kahoot/terraform-provider-nodeping/internal/resources/check"
+	contactresource "github.com/stefang-kahoot/terraform-provider-nodeping/internal/resources/contact"
+	contactgroupresource "github.com/stefang-kahoot/terraform-provider-nodeping/internal/resources/contactgroup"
 )
 
 var _ provider.Provider = &NodePingProvider{}
