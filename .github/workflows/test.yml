@@ -9,104 +9,12 @@ on:
 permissions:
   contents: read
 
+# Only PRs cancel superseded runs; every push to main gets a complete result.
 concurrency:
-  group: test-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  GO_VERSION: '1.27'
-  TERRAFORM_VERSION: '1.14.9'
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
-    name: Build & vet
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: gofmt
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "These files are not gofmt'd:"
-            echo "$unformatted"
-            exit 1
-          fi
-
-      - name: go vet
-        run: go vet ./...
-
-      - name: go build
-        run: go build -v ./...
-
-      # A stale go.mod/go.sum breaks reproducible builds; catch it here rather
-      # than during a release.
-      - name: go mod tidy is a no-op
-        run: |
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-
-      # Dependabot can only edit manifests, never the README. This turns a
-      # stale version table into a failing check instead of silent drift.
-      - name: README version table is current
-        run: ./scripts/sync-readme-versions.sh --check
-
-  unit:
-    name: Unit tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - name: go test
-        run: go test -race -covermode=atomic -coverprofile=coverage.out -coverpkg=./... ./...
-
-      - name: Coverage summary
-        run: |
-          go tool cover -func=coverage.out | tail -1
-          {
-            echo '### Coverage'
-            echo '```'
-            go tool cover -func=coverage.out | tail -1
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: coverage
-          path: coverage.out
-          retention-days: 14
-
-  acceptance:
-    name: Acceptance tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      # The acceptance tests drive a real terraform binary against an
-      # in-process mock of the NodePing API. No credentials and no network
-      # calls to nodeping.com are involved, so this is safe to run on every PR.
-      - uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-
-      - name: go test -run TestAcc
-        env:
-          TF_ACC: '1'
-        run: go test -v -timeout 20m -run 'TestAcc' ./...
+  # The jobs live in ci.yml so release.yml runs exactly the same gate.
+  ci:
+    uses: ./.github/workflows/ci.yml

@@ -12,11 +12,17 @@ on:
 permissions:
   contents: read
 
+# Only PRs cancel superseded runs, so a push to main and the weekly schedule
+# never cancel each other.
 concurrency:
-  group: security-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # Fork and Dependabot PRs get a read-only GITHUB_TOKEN that `permissions`
+  # cannot raise, and upload-sarif fails the job on the resulting 403. Those
+  # runs still scan and still gate; they just don't publish to the Security tab.
+  CAN_UPLOAD_SARIF: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' }}
   GITLEAKS_VERSION: v8.30.1
   TRIVY_VERSION: 0.74.0
 
@@ -24,12 +30,14 @@ jobs:
   secret-scan:
     name: Secret detection
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # Full history: the whole point is to catch secrets in *any* commit,
           # not just the tip.
           fetch-depth: 0
@@ -53,8 +61,10 @@ jobs:
         # into a public build log, i.e. leaked a second time.
 
       - name: Upload gitleaks SARIF
-        if: always() && hashFiles('gitleaks.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v4
+        if: >-
+          always() && hashFiles('gitleaks.sarif') != '' &&
+          env.CAN_UPLOAD_SARIF == 'true'
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
@@ -65,10 +75,13 @@ jobs:
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27'
           cache: true
@@ -81,11 +94,14 @@ jobs:
   trivy:
     name: Trivy (vulnerabilities, misconfig, secrets)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # First pass: never fails, produces the SARIF for the Security tab so
       # findings stay visible even while an exception is active.
@@ -101,8 +117,10 @@ jobs:
               /repo
 
       - name: Upload Trivy SARIF
-        if: always() && hashFiles('trivy.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v4
+        if: >-
+          always() && hashFiles('trivy.sarif') != '' &&
+          env.CAN_UPLOAD_SARIF == 'true'
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: trivy.sarif
           category: trivy

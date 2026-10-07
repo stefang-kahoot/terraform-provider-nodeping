@@ -4,20 +4,39 @@ on:
   push:
     tags:
       - 'v*'
+  # For re-running a release: dispatch against the tag, not a branch. The
+  # release environment only admits v* tags, so a branch dispatch stops there.
+  workflow_dispatch:
+
+permissions: {}
 
 jobs:
-  goreleaser:
-    runs-on: ubuntu-latest
+  ci:
+    uses: ./.github/workflows/ci.yml
     permissions:
-      contents: write
+      contents: read # checkout
+
+  goreleaser:
+    name: Release
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Holds the GPG secrets, so they are unreadable outside a v* tag run.
+    environment: release
+    permissions:
+      contents: write # create the GitHub release and upload its assets
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27'
+          # A release build must not restore a cache that a PR run could have
+          # written.
+          cache: false
 
       - name: Import GPG key
         run: |
@@ -26,7 +45,7 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
-      - uses: goreleaser/goreleaser-action@v7
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
           version: v2.13.3
@@ -34,4 +53,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          LOG_LEVEL: debug
