@@ -1,16 +1,31 @@
 # Terraform Provider for NodePing
 
-[![Tests](https://github.com/phizzl/terraform-provider-nodeping/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/phizzl/terraform-provider-nodeping/actions/workflows/test.yml)
-[![Security](https://github.com/phizzl/terraform-provider-nodeping/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/phizzl/terraform-provider-nodeping/actions/workflows/security.yml)
+[![Tests](https://github.com/stefang-kahoot/terraform-provider-nodeping/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/stefang-kahoot/terraform-provider-nodeping/actions/workflows/test.yml)
+[![Security](https://github.com/stefang-kahoot/terraform-provider-nodeping/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/stefang-kahoot/terraform-provider-nodeping/actions/workflows/security.yml)
 
-[![Terraform Registry](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.terraform.io%2Fv1%2Fproviders%2Fphizzl%2Fnodeping&query=%24.version&label=terraform%20registry&color=844FBA&logo=terraform)](https://registry.terraform.io/providers/phizzl/nodeping/latest)
-[![Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.terraform.io%2Fv1%2Fproviders%2Fphizzl%2Fnodeping&query=%24.downloads&label=downloads&color=844FBA&logo=terraform)](https://registry.terraform.io/providers/phizzl/nodeping/latest)
-[![Go](https://img.shields.io/github/go-mod/go-version/phizzl/terraform-provider-nodeping?logo=go)](go.mod)
+[![Terraform Registry](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.terraform.io%2Fv1%2Fproviders%2Fstefang-kahoot%2Fnodeping&query=%24.version&label=terraform%20registry&color=844FBA&logo=terraform)](https://registry.terraform.io/providers/stefang-kahoot/nodeping/latest)
+[![Downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.terraform.io%2Fv1%2Fproviders%2Fstefang-kahoot%2Fnodeping&query=%24.downloads&label=downloads&color=844FBA&logo=terraform)](https://registry.terraform.io/providers/stefang-kahoot/nodeping/latest)
+[![Go](https://img.shields.io/github/go-mod/go-version/stefang-kahoot/terraform-provider-nodeping?logo=go)](go.mod)
 [![Terraform](https://img.shields.io/badge/Terraform-1.14+-purple.svg?logo=terraform)](https://www.terraform.io/)
-[![License](https://img.shields.io/github/license/phizzl/terraform-provider-nodeping?color=green)](LICENSE)
-[![ko-fi](https://img.shields.io/badge/Ko--fi-Support%20this%20project-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/phizzl)
+[![License](https://img.shields.io/github/license/stefang-kahoot/terraform-provider-nodeping?color=green)](LICENSE)
 
 A Terraform provider for managing [NodePing](https://nodeping.com/) monitoring resources.
+
+This is a fork of [phizzl/terraform-provider-nodeping](https://github.com/phizzl/terraform-provider-nodeping),
+published as [`stefang-kahoot/nodeping`](https://registry.terraform.io/providers/stefang-kahoot/nodeping/latest).
+It carries fixes found while bringing an existing NodePing estate under
+Terraform and merges upstream's changes as they land. The fixes go upstream as
+pull requests too; those already open are linked below. Over upstream it:
+
+- merges `default_tags` into a computed `tags_all` instead of into `tags`, so a
+  check with tags of its own can be planned
+  ([phizzl#7](https://github.com/phizzl/terraform-provider-nodeping/pull/7));
+- reads a `warningdays` of `0`, which the NodePing web interface saves for an
+  empty field, as unset
+  ([phizzl#8](https://github.com/phizzl/terraform-provider-nodeping/pull/8));
+- reads back the ten check attributes upstream leaves unmapped on import and
+  refresh -- `postdata`, `homeloc` and MYSQL, SMTP, DNS and SNMP parameters --
+  and keeps a planned value when the API leaves it out.
 
 ## Features
 
@@ -45,7 +60,7 @@ terraform {
 ### Building from Source
 
 ```bash
-git clone https://github.com/phizzl/terraform-provider-nodeping.git
+git clone https://github.com/stefang-kahoot/terraform-provider-nodeping.git
 cd terraform-provider-nodeping
 go build -o terraform-provider-nodeping
 ```
@@ -486,10 +501,12 @@ This project is licensed under the Mozilla Public License 2.0 - see the [LICENSE
 
 - [NodePing Documentation](https://nodeping.com/documentation.html)
 - [NodePing API Reference](https://nodeping.com/docs-api-overview.html)
-- [Issue Tracker](https://github.com/phizzl/terraform-provider-nodeping/issues)
-- [Source Repository](https://github.com/phizzl/terraform-provider-nodeping)
+- [Issue Tracker](https://github.com/stefang-kahoot/terraform-provider-nodeping/issues)
+- [Source Repository](https://github.com/stefang-kahoot/terraform-provider-nodeping)
+- [Upstream](https://github.com/phizzl/terraform-provider-nodeping), which this fork is built on
 
-If this provider saves you time, you can support its development on Ko-fi:
+Most of this provider is the work of its upstream author. If it saves you
+time, you can support that work on Ko-fi:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/phizzl)
 
