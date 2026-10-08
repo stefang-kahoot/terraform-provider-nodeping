@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,7 +16,15 @@ type MockNodePingServer struct {
 	checks        map[string]map[string]interface{}
 	contactgroups map[string]map[string]interface{}
 	// checkUpdates holds every update request body per check, as sent.
-	checkUpdates map[string][]map[string]interface{}
+	checkUpdates  map[string][]map[string]interface{}
+	contactWrites []ContactWrite
+}
+
+// ContactWrite is a create or update of a contact as the mock received it,
+// whether or not it was accepted.
+type ContactWrite struct {
+	Method string
+	Body   map[string]interface{}
 }
 
 func NewMockNodePingServer() *MockNodePingServer {
@@ -71,6 +80,16 @@ func (m *MockNodePingServer) handleContacts(w http.ResponseWriter, r *http.Reque
 			http.Error(w, `{"error": "invalid JSON"}`, http.StatusBadRequest)
 			return
 		}
+		m.contactWrites = append(m.contactWrites, ContactWrite{Method: r.Method, Body: req})
+
+		// A contact may be created without addresses, by leaving
+		// `newaddresses` out; it then reads back with no `addresses` key. An
+		// empty list is refused.
+		newAddrs, _ := req["newaddresses"].([]interface{})
+		if newAddrs != nil && len(newAddrs) == 0 {
+			writeOK(w, noAddressesError)
+			return
+		}
 
 		id := "MOCK-CONTACT-" + generateID()
 		contact := map[string]interface{}{
@@ -79,10 +98,9 @@ func (m *MockNodePingServer) handleContacts(w http.ResponseWriter, r *http.Reque
 			"customer_id": "MOCK-CUSTOMER",
 			"name":        req["name"],
 			"custrole":    req["custrole"],
-			"addresses":   make(map[string]interface{}),
 		}
 
-		if newAddrs, ok := req["newaddresses"].([]interface{}); ok {
+		if len(newAddrs) > 0 {
 			addresses := make(map[string]interface{})
 			for _, addr := range newAddrs {
 				addrMap := addr.(map[string]interface{})
@@ -129,12 +147,24 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 			http.Error(w, `{"error": "invalid JSON"}`, http.StatusBadRequest)
 			return
 		}
+		m.contactWrites = append(m.contactWrites, ContactWrite{Method: r.Method, Body: req})
+
+		addresses, ok := updatedAddresses(contact, req)
+		if !ok {
+			writeOK(w, noAddressesError)
+			return
+		}
 
 		if name, ok := req["name"]; ok {
 			contact["name"] = name
 		}
 		if custrole, ok := req["custrole"]; ok {
 			contact["custrole"] = custrole
+		}
+		if len(addresses) > 0 {
+			contact["addresses"] = addresses
+		} else {
+			delete(contact, "addresses")
 		}
 
 		m.contacts[id] = contact
@@ -153,6 +183,64 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 	default:
 		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
 	}
+}
+
+// noAddressesError is NodePing's answer, with status 200, to a create or
+// update that would leave a contact with no addresses. The wording is its
+// own; the request has nothing to do with the account's owner.
+const noAddressesError = `{"error":"Account must have at least one 'owner' contact."}`
+
+// updatedAddresses returns a contact's addresses after an update's
+// `addresses` and `newaddresses`, the way the API applies them, without
+// changing the contact. ok is false if NodePing would refuse the update.
+//
+// `addresses` carries the surviving addresses keyed by their existing ID and
+// replaces the stored set; `newaddresses` is a list with no IDs yet, and each
+// entry is assigned one. An absent `addresses` key leaves what is already
+// stored alone -- which is exactly what makes omitting it a bug rather than a
+// no-op when every address has in fact been replaced. So does `null` or "",
+// which NodePing ignores.
+//
+// No update can remove a contact's last address: an empty `addresses` ({} or
+// []) or `newaddresses` that would leave none is refused with
+// noAddressesError. An update that sends neither key leaves an address-less
+// contact as it is.
+func updatedAddresses(contact, req map[string]interface{}) (map[string]interface{}, bool) {
+	stored, _ := contact["addresses"].(map[string]interface{})
+	addresses := make(map[string]interface{}, len(stored))
+	for id, addr := range stored {
+		addresses[id] = addr
+	}
+	sentEmpty := false
+
+	switch updated := req["addresses"].(type) {
+	case map[string]interface{}:
+		addresses = make(map[string]interface{}, len(updated))
+		for id, addr := range updated {
+			addresses[id] = addr
+		}
+		sentEmpty = len(updated) == 0
+	case []interface{}:
+		// Only an empty list has been tried; it empties the set.
+		if len(updated) == 0 {
+			addresses = make(map[string]interface{})
+			sentEmpty = true
+		}
+	}
+
+	if added, ok := req["newaddresses"].([]interface{}); ok {
+		sentEmpty = sentEmpty || len(added) == 0
+		for _, addr := range added {
+			if addrMap, ok := addr.(map[string]interface{}); ok {
+				addresses[generateID()] = addrMap
+			}
+		}
+	}
+
+	if sentEmpty && len(addresses) == 0 {
+		return nil, false
+	}
+	return addresses, true
 }
 
 // The NodePing API takes check-type specific arguments at the top level of a
@@ -407,11 +495,23 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 var idCounter int
 var idMu sync.Mutex
 
+// generateID hands out mock resource and address IDs.
+//
+// They have to sort in the order they were issued. The contact resource falls
+// back to ID order for any address it cannot match against a plan, which is
+// every address when there is no plan at all -- an import. An ID scheme whose
+// lexical order diverged from its issue order therefore decided whether a
+// multi-address import test passed, and idCounter is a package-level global
+// shared by every test in the binary, so the answer moved whenever a test was
+// added or removed.
+//
+// The previous scheme ('A'+n%26, 'A'+n/26%26, '0'+n%10) wrapped every 26 IDs
+// and did exactly that: ...YA4, ZA5, AB6... sorts as AB6, YA4, ZA5.
 func generateID() string {
 	idMu.Lock()
 	defer idMu.Unlock()
 	idCounter++
-	return string(rune('A'+idCounter%26)) + string(rune('A'+(idCounter/26)%26)) + string(rune('0'+idCounter%10))
+	return fmt.Sprintf("%06d", idCounter)
 }
 
 func (m *MockNodePingServer) AddContact(id string, contact map[string]interface{}) {
@@ -431,6 +531,14 @@ func (m *MockNodePingServer) GetContact(id string) (map[string]interface{}, bool
 	defer m.mu.RUnlock()
 	c, ok := m.contacts[id]
 	return c, ok
+}
+
+// ContactWrites returns every create and update of a contact the mock has
+// received, in order, including those it refused.
+func (m *MockNodePingServer) ContactWrites() []ContactWrite {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]ContactWrite(nil), m.contactWrites...)
 }
 
 func (m *MockNodePingServer) AddContactGroup(id string, group map[string]interface{}) {

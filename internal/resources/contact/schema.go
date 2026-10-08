@@ -151,12 +151,11 @@ terraform import nodeping_contact.example 201205050153W2Q4C:201205050153W2Q4C-BK
 				Description: "Contact addresses for receiving notifications.",
 				NestedObject: schema.NestedBlockObject{
 					Attributes: map[string]schema.Attribute{
+						// No UseStateForUnknown: it carries the ID over by list
+						// position. ContactResource.ModifyPlan plans it instead.
 						"id": schema.StringAttribute{
 							Description: "The unique identifier of the address.",
 							Computed:    true,
-							PlanModifiers: []planmodifier.String{
-								stringplanmodifier.UseStateForUnknown(),
-							},
 						},
 						"type": schema.StringAttribute{
 							Description: "The type of address. Valid values: 'email', 'sms', 'webhook', 'slack', 'hipchat', 'pushover', 'pagerduty', 'voice'.",

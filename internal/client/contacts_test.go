@@ -196,3 +196,69 @@ func TestDeleteContact(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+// sentFields marshals a request and returns its top-level fields as sent.
+func sentFields(t *testing.T, req any) map[string]json.RawMessage {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return fields
+}
+
+// An update that sends `addresses` replaces the contact's addresses with
+// them, so a replacement of every address has to send it even when it keeps
+// none: {} with the new ones under `newaddresses`. An update with no address
+// to send leaves both keys out; NodePing refuses an empty collection that
+// would leave the contact with no address. null would happen to be ignored,
+// but leaving the key out says so.
+func TestContactUpdateRequestAddresses(t *testing.T) {
+	t.Parallel()
+
+	email := NewAddress{Type: "email", Address: "x@example.com"}
+	tests := []struct {
+		name          string
+		req           ContactUpdateRequest
+		wantAddresses string
+		wantNew       bool
+	}{
+		{"nil leaves addresses out", ContactUpdateRequest{Name: "n"}, "", false},
+		{"an empty map replaces every address", ContactUpdateRequest{Addresses: map[string]ContactAddress{}, NewAddresses: []NewAddress{email}}, `{}`, true},
+		{"kept addresses go by ID", ContactUpdateRequest{Addresses: map[string]ContactAddress{"A1": {Type: "email", Address: "a@example.com"}}}, `{"A1":{"address":"a@example.com","type":"email"}}`, false},
+		{"no new addresses leaves newaddresses out", ContactUpdateRequest{Addresses: map[string]ContactAddress{}, NewAddresses: []NewAddress{}}, `{}`, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			fields := sentFields(t, tt.req)
+			if got := string(fields["addresses"]); got != tt.wantAddresses {
+				t.Errorf("addresses = %q, want %q", got, tt.wantAddresses)
+			}
+			if _, sent := fields["newaddresses"]; sent != tt.wantNew {
+				t.Errorf("newaddresses sent: %v, want %v", sent, tt.wantNew)
+			}
+		})
+	}
+}
+
+// NodePing refuses a create with `newaddresses: []`, but creates a contact
+// with no address when the key is left out.
+func TestContactCreateRequestLeavesOutNoNewAddresses(t *testing.T) {
+	t.Parallel()
+
+	for _, req := range []ContactCreateRequest{
+		{Name: "n"},
+		{Name: "n", NewAddresses: []NewAddress{}},
+	} {
+		if got, sent := sentFields(t, req)["newaddresses"]; sent {
+			t.Errorf("a create with no addresses sent newaddresses %s", got)
+		}
+	}
+}

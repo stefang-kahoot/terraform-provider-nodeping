@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -19,6 +21,7 @@ var (
 	_ resource.Resource                = &ContactResource{}
 	_ resource.ResourceWithConfigure   = &ContactResource{}
 	_ resource.ResourceWithImportState = &ContactResource{}
+	_ resource.ResourceWithModifyPlan  = &ContactResource{}
 )
 
 type ContactResource struct {
@@ -202,7 +205,14 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 		}
 	}
 
-	updateReq.Addresses = make(map[string]client.ContactAddress)
+	// Send `addresses` whenever the plan has an address, even if it keeps none
+	// of the old ones: without the key NodePing keeps them all next to the new
+	// ones. With no address, send neither key. The contact has none to remove
+	// (ModifyPlan refuses to remove the last one), and NodePing refuses an
+	// empty collection that would leave a contact without an address.
+	if len(plan.Addresses) > 0 {
+		updateReq.Addresses = make(map[string]client.ContactAddress)
+	}
 	for _, addr := range plan.Addresses {
 		if !addr.ID.IsNull() && !addr.ID.IsUnknown() && existingAddressIDs[addr.ID.ValueString()] {
 			addrUpdate := client.ContactAddress{
@@ -314,6 +324,129 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
+// ModifyPlan plans the ID of every address on an update; see
+// plannedAddressIDs. A create has no IDs to carry over and a destroy no plan.
+// It also refuses an update that removes a contact's last address.
+func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+
+	addressPath := path.Root("address")
+
+	var plannedList, priorList types.List
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, addressPath, &plannedList)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, addressPath, &priorList)...)
+	if resp.Diagnostics.HasError() || plannedList.IsUnknown() {
+		// A dynamic block over a collection not known yet: there is no block
+		// to plan an ID for until it is. Terraform plans again during the
+		// apply, with the collection known.
+		return
+	}
+
+	var planned, prior []AddressModel
+	resp.Diagnostics.Append(plannedList.ElementsAs(ctx, &planned, false)...)
+	resp.Diagnostics.Append(priorList.ElementsAs(ctx, &prior, false)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// NodePing refuses any update that would leave a contact with no address,
+	// with the misleading "Account must have at least one 'owner' contact."
+	// A contact created without an address is fine and can stay that way.
+	if len(planned) == 0 && len(prior) > 0 {
+		var id, name types.String
+		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &id)...)
+		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("name"), &name)...)
+		contact := "ID " + id.ValueString()
+		if name.ValueString() != "" {
+			contact = fmt.Sprintf("%q (%s)", name.ValueString(), contact)
+		}
+		resp.Diagnostics.AddAttributeError(
+			addressPath,
+			"Cannot remove a contact's last address",
+			fmt.Sprintf("The configuration removes every address of contact %s, but NodePing cannot remove a contact's last address. "+
+				"Keep at least one address block, or delete the contact and create it again.", contact),
+		)
+		return
+	}
+
+	for i, id := range plannedAddressIDs(prior, planned) {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, addressPath.AtListIndex(i).AtName("id"), id)...)
+	}
+}
+
+// plannedAddressIDs decides, for each planned address block, which existing
+// address it is, and returns that address's ID -- or unknown for an address
+// NodePing has yet to create. Update sends a known ID under `addresses`, which
+// keeps or edits that address, and an unknown one under `newaddresses`; an
+// existing ID no block claims is left out, and NodePing deletes it.
+//
+// Terraform pairs list blocks with prior state by position, and so did
+// UseStateForUnknown on address.id. Position is not what identifies an
+// address: remove the first of two and the second inherited the first's ID,
+// so the update wrote it under that ID and NodePing deleted its own. Contact
+// groups and checks reference address IDs, so they were quietly repointed. A
+// block added at the end had no prior position at all, and its ID was planned
+// null rather than unknown, failing the apply.
+//
+// A block therefore takes, in this order:
+//
+//  1. the ID of the first unclaimed prior address with the same type and
+//     address, wherever it sat -- reordered blocks keep their IDs, and
+//     identical blocks claim identical addresses in order;
+//  2. failing that, the ID of the prior address at its own position, if no
+//     block claimed it and its type is the same -- an address edited in
+//     place, such as a rotated webhook URL, keeps its ID, as NodePing allows.
+//     A changed type is a new address instead: whether NodePing can change an
+//     address's type in place is untested;
+//  3. otherwise unknown.
+//
+// Every block is tried for 1 before any for 2, so a block that moved claims
+// its own ID before a neighbour edited in place can take it by position. An
+// address or type not known until apply (taken from another resource) cannot
+// match by value; with a known type it can still keep its position's ID.
+func plannedAddressIDs(prior, planned []AddressModel) []types.String {
+	ids := make([]types.String, len(planned))
+	for i := range ids {
+		ids[i] = types.StringUnknown()
+	}
+
+	claimed := make([]bool, len(prior))
+	claimable := func(j int) bool {
+		return !claimed[j] && isKnown(prior[j].ID) && prior[j].ID.ValueString() != ""
+	}
+
+	for i, block := range planned {
+		if !isKnown(block.Type) || !isKnown(block.Address) {
+			continue
+		}
+		for j, old := range prior {
+			if claimable(j) && old.Type.Equal(block.Type) && old.Address.Equal(block.Address) {
+				claimed[j] = true
+				ids[i] = old.ID
+				break
+			}
+		}
+	}
+
+	for i, block := range planned {
+		if !ids[i].IsUnknown() || i >= len(prior) || !claimable(i) || !isKnown(block.Type) {
+			continue
+		}
+		if prior[i].Type.Equal(block.Type) {
+			claimed[i] = true
+			ids[i] = prior[i].ID
+		}
+	}
+
+	return ids
+}
+
+func isKnown(s types.String) bool {
+	return !s.IsNull() && !s.IsUnknown()
+}
+
 func (r *ContactResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state ContactResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -395,106 +528,209 @@ func (r *ContactResource) ImportState(ctx context.Context, req resource.ImportSt
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
+// mapAddressesToModel turns the API's address map into the ordered list the
+// schema declares.
+//
+// `address` is a list block, so Terraform compares it position by position:
+// state.address[0] has to be the address the configuration wrote first. The
+// API answers with a map and Go randomises map iteration, so the order used
+// to change from one call to the next. A contact with a single address cannot
+// show that, which is how it survived; with two or more the apply either
+// fails outright with "inconsistent result after apply" or -- the quieter
+// outcome -- each block binds to the wrong address.id, and the next update
+// PUTs one address's fields under another's ID and corrupts both.
+//
+// Addresses are therefore matched back to the planned blocks: first by ID,
+// where the block has one -- ModifyPlan planned it and Update sent the address
+// under it, or on a read it is the ID the prior state recorded -- then by
+// (type, address), the pair that identifies an address to someone reading the
+// configuration. A block being created has no ID until NodePing assigns one,
+// so it can only match by value; and two identical addresses can only be told
+// apart by ID, so matching those by value could swap them. Whatever the plan
+// does not account for follows in ID order -- an address added outside
+// Terraform, or every address when there is no plan to match against, as on
+// import.
 func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.ContactAddress, planAddresses []AddressModel, diags *diag.Diagnostics) []AddressModel {
 	if len(apiAddresses) == 0 {
 		return nil
 	}
 
-	result := make([]AddressModel, 0, len(apiAddresses))
+	ids := make([]string, 0, len(apiAddresses))
+	for id := range apiAddresses {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
 
-	planAddrByAddress := make(map[string]AddressModel)
-	for _, addr := range planAddresses {
-		key := addr.Type.ValueString() + ":" + addr.Address.ValueString()
-		planAddrByAddress[key] = addr
+	// Queue the IDs under the key the configuration knows them by. Two
+	// identical blocks hold two queued IDs and claim them in order, so they
+	// stay put instead of both resolving to the same address.
+	byKey := make(map[string][]string, len(ids))
+	for _, id := range ids {
+		key := addressKey(apiAddresses[id].Type, apiAddresses[id].Address)
+		byKey[key] = append(byKey[key], id)
 	}
 
-	for id, addr := range apiAddresses {
-		model := AddressModel{
-			ID:            types.StringValue(id),
-			Type:          types.StringValue(addr.Type),
-			Address:       types.StringValue(addr.Address),
-			SuppressUp:    types.BoolValue(addr.SuppressUp),
-			SuppressDown:  types.BoolValue(addr.SuppressDown),
-			SuppressFirst: types.BoolValue(addr.SuppressFirst),
-			SuppressDiag:  types.BoolValue(addr.SuppressDiag),
-			SuppressAll:   types.BoolValue(addr.SuppressAll),
-			Mute:          types.BoolValue(false),
+	// A block planned with an ID is the address NodePing holds under it.
+	matched := make([]string, len(planAddresses))
+	claimed := make(map[string]bool, len(ids))
+	for i, planned := range planAddresses {
+		if !isKnown(planned.ID) {
+			continue
 		}
-
-		if addr.Mute != nil {
-			var muteVal interface{}
-			if err := json.Unmarshal(addr.Mute, &muteVal); err == nil {
-				switch v := muteVal.(type) {
-				case bool:
-					model.Mute = types.BoolValue(v)
-				case float64:
-					model.Mute = types.BoolValue(v > 0)
-				}
+		if id := planned.ID.ValueString(); !claimed[id] {
+			if _, ok := apiAddresses[id]; ok {
+				claimed[id] = true
+				matched[i] = id
 			}
 		}
-
-		if addr.Action != "" {
-			model.Action = types.StringValue(addr.Action)
-		} else {
-			model.Action = types.StringNull()
-		}
-
-		if addr.Data != nil {
-			// Data can be a string or an object from the API
-			// Always normalize to compact JSON for consistent comparison
-			switch v := addr.Data.(type) {
-			case string:
-				if v != "" {
-					// Try to normalize JSON string to compact form
-					model.Data = types.StringValue(normalizeJSONString(v))
-				} else {
-					model.Data = types.StringNull()
-				}
-			case map[string]interface{}:
-				// Convert object to compact JSON string
-				jsonBytes, err := json.Marshal(v)
-				if err == nil {
-					model.Data = types.StringValue(string(jsonBytes))
-				} else {
-					model.Data = types.StringNull()
-				}
-			default:
-				// Try to marshal whatever it is to compact JSON
-				jsonBytes, err := json.Marshal(v)
-				if err == nil {
-					model.Data = types.StringValue(string(jsonBytes))
-				} else {
-					model.Data = types.StringNull()
-				}
-			}
-		} else {
-			model.Data = types.StringNull()
-		}
-
-		if addr.Priority != nil {
-			model.Priority = types.Int64Value(int64(*addr.Priority))
-		} else {
-			model.Priority = types.Int64Null()
-		}
-
-		if len(addr.Headers) > 0 {
-			headers, _ := types.MapValueFrom(ctx, types.StringType, addr.Headers)
-			model.Headers = headers
-		} else {
-			model.Headers = types.MapNull(types.StringType)
-		}
-
-		if len(addr.QueryStrings) > 0 {
-			qs, _ := types.MapValueFrom(ctx, types.StringType, addr.QueryStrings)
-			model.QueryStrings = qs
-		} else {
-			model.QueryStrings = types.MapNull(types.StringType)
-		}
-
-		result = append(result, model)
 	}
 
+	// Give every other planned block the address it names, where the API
+	// still has one. A block left empty here is one whose address changed
+	// outside Terraform.
+	for i, planned := range planAddresses {
+		if matched[i] != "" {
+			continue
+		}
+		key := addressKey(planned.Type.ValueString(), planned.Address.ValueString())
+		queue := byKey[key]
+		for len(queue) > 0 && claimed[queue[0]] {
+			queue = queue[1:]
+		}
+		if len(queue) == 0 {
+			continue
+		}
+		byKey[key] = queue[1:]
+		claimed[queue[0]] = true
+		matched[i] = queue[0]
+	}
+
+	leftover := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if !claimed[id] {
+			leftover = append(leftover, id)
+		}
+	}
+
+	// An unmatched block still owns its position, so fill it from the
+	// leftovers rather than appending them all at the end. Appending shifts
+	// every later block up one: the renamed address lands on the following
+	// block, and the next update then writes each block's address under its
+	// neighbour's ID. Contact groups reference address IDs, so that quietly
+	// repoints any group that named one of them.
+	ordered := make([]string, 0, len(ids))
+	next := 0
+	for _, id := range matched {
+		if id == "" {
+			if next < len(leftover) {
+				ordered = append(ordered, leftover[next])
+				next++
+			}
+			continue
+		}
+		ordered = append(ordered, id)
+	}
+	ordered = append(ordered, leftover[next:]...)
+
+	result := make([]AddressModel, 0, len(ordered))
+	for _, id := range ordered {
+		result = append(result, addressToModel(ctx, id, apiAddresses[id], diags))
+	}
 	return result
+}
+
+// addressKey identifies an address the way a configuration does. NodePing
+// allows the same address under two types, so the type is part of the key.
+func addressKey(addrType, address string) string {
+	return addrType + ":" + address
+}
+
+func addressToModel(ctx context.Context, id string, addr client.ContactAddress, diags *diag.Diagnostics) AddressModel {
+	model := AddressModel{
+		ID:            types.StringValue(id),
+		Type:          types.StringValue(addr.Type),
+		Address:       types.StringValue(addr.Address),
+		SuppressUp:    types.BoolValue(addr.SuppressUp),
+		SuppressDown:  types.BoolValue(addr.SuppressDown),
+		SuppressFirst: types.BoolValue(addr.SuppressFirst),
+		SuppressDiag:  types.BoolValue(addr.SuppressDiag),
+		SuppressAll:   types.BoolValue(addr.SuppressAll),
+		Mute:          types.BoolValue(false),
+	}
+
+	if addr.Mute != nil {
+		var muteVal interface{}
+		if err := json.Unmarshal(addr.Mute, &muteVal); err == nil {
+			switch v := muteVal.(type) {
+			case bool:
+				model.Mute = types.BoolValue(v)
+			case float64:
+				model.Mute = types.BoolValue(v > 0)
+			}
+		}
+	}
+
+	if addr.Action != "" {
+		model.Action = types.StringValue(addr.Action)
+	} else {
+		model.Action = types.StringNull()
+	}
+
+	if addr.Data != nil {
+		// Data can be a string or an object from the API
+		// Always normalize to compact JSON for consistent comparison
+		switch v := addr.Data.(type) {
+		case string:
+			if v != "" {
+				// Try to normalize JSON string to compact form
+				model.Data = types.StringValue(normalizeJSONString(v))
+			} else {
+				model.Data = types.StringNull()
+			}
+		case map[string]interface{}:
+			// Convert object to compact JSON string
+			jsonBytes, err := json.Marshal(v)
+			if err == nil {
+				model.Data = types.StringValue(string(jsonBytes))
+			} else {
+				model.Data = types.StringNull()
+			}
+		default:
+			// Try to marshal whatever it is to compact JSON
+			jsonBytes, err := json.Marshal(v)
+			if err == nil {
+				model.Data = types.StringValue(string(jsonBytes))
+			} else {
+				model.Data = types.StringNull()
+			}
+		}
+	} else {
+		model.Data = types.StringNull()
+	}
+
+	if addr.Priority != nil {
+		model.Priority = types.Int64Value(int64(*addr.Priority))
+	} else {
+		model.Priority = types.Int64Null()
+	}
+
+	if len(addr.Headers) > 0 {
+		headers, d := types.MapValueFrom(ctx, types.StringType, addr.Headers)
+		diags.Append(d...)
+		model.Headers = headers
+	} else {
+		model.Headers = types.MapNull(types.StringType)
+	}
+
+	if len(addr.QueryStrings) > 0 {
+		qs, d := types.MapValueFrom(ctx, types.StringType, addr.QueryStrings)
+		diags.Append(d...)
+		model.QueryStrings = qs
+	} else {
+		model.QueryStrings = types.MapNull(types.StringType)
+	}
+
+	return model
 }
 
 // normalizeJSONString attempts to normalize a JSON string to compact form.
