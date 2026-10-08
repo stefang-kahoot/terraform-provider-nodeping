@@ -85,6 +85,97 @@ resource "nodeping_contact" "test" {
 	})
 }
 
+// Contacts routinely carry more than one address: an email and an SMS, a
+// webhook with an email fallback. Every other contact in this suite has
+// exactly one, and one address is precisely the shape that cannot expose an
+// ordering bug -- the API returns addresses as a map, Go randomises map
+// iteration, and with a single entry the order is not a question.
+//
+// With several, it is. Each `address` is a block in an ordered list, so
+// Terraform compares state.address[0] against the first block in the
+// configuration. If the order shifts between calls the apply fails with
+// "inconsistent result after apply", or worse, each block binds to the wrong
+// address.id and the next update writes one address's fields under another's
+// ID.
+//
+// Three addresses, because two can look right half the time by chance.
+func TestAccContactResource_multipleAddresses(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	const addresses = `
+  address {
+    type    = "email"
+    address = "first@example.com"
+  }
+
+  address {
+    type    = "sms"
+    address = "+15550000001"
+  }
+
+  address {
+    type    = "email"
+    address = "second@example.com"
+  }
+`
+
+	config := providerConfig(mock.URL()) + `
+resource "nodeping_contact" "multi" {
+  name = "acc-multi-address"
+` + addresses + `}
+`
+
+	renamed := providerConfig(mock.URL()) + `
+resource "nodeping_contact" "multi" {
+  name = "acc-multi-address-renamed"
+` + addresses + `}
+`
+
+	// Every address keeps its configured position, and every position keeps a
+	// distinct ID.
+	addressesInOrder := resource.ComposeAggregateTestCheckFunc(
+		resource.TestCheckResourceAttr("nodeping_contact.multi", "address.#", "3"),
+		resource.TestCheckResourceAttr("nodeping_contact.multi", "address.0.address", "first@example.com"),
+		resource.TestCheckResourceAttr("nodeping_contact.multi", "address.0.type", "email"),
+		resource.TestCheckResourceAttr("nodeping_contact.multi", "address.1.address", "+15550000001"),
+		resource.TestCheckResourceAttr("nodeping_contact.multi", "address.1.type", "sms"),
+		resource.TestCheckResourceAttr("nodeping_contact.multi", "address.2.address", "second@example.com"),
+		resource.TestCheckResourceAttr("nodeping_contact.multi", "address.2.type", "email"),
+		resource.TestCheckResourceAttrSet("nodeping_contact.multi", "address.0.id"),
+		resource.TestCheckResourceAttrSet("nodeping_contact.multi", "address.1.id"),
+		resource.TestCheckResourceAttrSet("nodeping_contact.multi", "address.2.id"),
+	)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check:  addressesInOrder,
+			},
+			// Re-reading them must not shuffle them.
+			{Config: config, PlanOnly: true},
+			// An update that touches only the name must leave all three
+			// addresses on the IDs they already had.
+			{
+				Config: renamed,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("nodeping_contact.multi", "name", "acc-multi-address-renamed"),
+					addressesInOrder,
+				),
+			},
+			{Config: renamed, PlanOnly: true},
+			{
+				Config:            renamed,
+				ResourceName:      "nodeping_contact.multi",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 func TestAccCheckResource_lifecycle(t *testing.T) {
 	mock := testutil.NewMockNodePingServer()
 	t.Cleanup(mock.Close)
