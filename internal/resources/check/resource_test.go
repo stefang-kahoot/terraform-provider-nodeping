@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/checkattr"
@@ -434,5 +435,86 @@ func TestMapCheckToModelReadsFieldsTheConfigurationLacks(t *testing.T) {
 	}
 	if model.Fields.IsNull() || len(model.Fields.Elements()) != 1 {
 		t.Errorf("fields = %s, want the one field NodePing stores", model.Fields)
+	}
+}
+
+// With ignore_mute, a check muted in NodePing plans the prior state's mute,
+// but the schema default has by then made the framework mark label unknown on
+// a check without one. Only when nothing else changes may the plan go back to
+// the prior state as it is.
+func TestUnchangedButForUnknowns(t *testing.T) {
+	objectType := tftypes.Object{AttributeTypes: map[string]tftypes.Type{
+		"label":  tftypes.String,
+		"target": tftypes.String,
+		"mute":   tftypes.Bool,
+		"tags":   tftypes.List{ElementType: tftypes.String},
+	}}
+	object := func(label, target, mute, tags tftypes.Value) tftypes.Value {
+		return tftypes.NewValue(objectType, map[string]tftypes.Value{
+			"label": label, "target": target, "mute": mute, "tags": tags,
+		})
+	}
+	str := func(s string) tftypes.Value { return tftypes.NewValue(tftypes.String, s) }
+	unknownString := tftypes.NewValue(tftypes.String, tftypes.UnknownValue)
+	nullString := tftypes.NewValue(tftypes.String, nil)
+	muted := tftypes.NewValue(tftypes.Bool, true)
+	unmuted := tftypes.NewValue(tftypes.Bool, false)
+	nullBool := tftypes.NewValue(tftypes.Bool, nil)
+	tags := func(elements ...tftypes.Value) tftypes.Value {
+		return tftypes.NewValue(tftypes.List{ElementType: tftypes.String}, elements)
+	}
+
+	prior := object(str("example.com"), str("https://example.com"), muted, tags(str("web")))
+
+	tests := []struct {
+		name   string
+		plan   tftypes.Value
+		config tftypes.Value
+		want   bool
+	}{
+		{
+			name:   "nothing changed",
+			plan:   prior,
+			config: object(nullString, str("https://example.com"), nullBool, tags(str("web"))),
+			want:   true,
+		},
+		{
+			name:   "only a label the configuration leaves unset is unknown",
+			plan:   object(unknownString, str("https://example.com"), muted, tags(str("web"))),
+			config: object(nullString, str("https://example.com"), nullBool, tags(str("web"))),
+			want:   true,
+		},
+		{
+			name:   "the target changes too",
+			plan:   object(unknownString, str("https://example.org"), muted, tags(str("web"))),
+			config: object(nullString, str("https://example.org"), nullBool, tags(str("web"))),
+			want:   false,
+		},
+		{
+			name:   "the configuration's own label is unknown",
+			plan:   object(unknownString, str("https://example.com"), muted, tags(str("web"))),
+			config: object(unknownString, str("https://example.com"), nullBool, tags(str("web"))),
+			want:   false,
+		},
+		{
+			name:   "a configured tag is unknown",
+			plan:   object(str("example.com"), str("https://example.com"), muted, tags(unknownString)),
+			config: object(nullString, str("https://example.com"), nullBool, tags(unknownString)),
+			want:   false,
+		},
+		{
+			name:   "mute changes",
+			plan:   object(str("example.com"), str("https://example.com"), unmuted, tags(str("web"))),
+			config: object(nullString, str("https://example.com"), nullBool, tags(str("web"))),
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := unchangedButForUnknowns(tt.plan, tt.config, prior); got != tt.want {
+				t.Errorf("unchangedButForUnknowns() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

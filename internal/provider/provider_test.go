@@ -26,7 +26,7 @@ func TestProviderSchema(t *testing.T) {
 		t.Fatal("provider schema is nil")
 	}
 
-	requiredAttrs := []string{"api_token", "customer_id", "api_url", "rate_limit", "max_retries"}
+	requiredAttrs := []string{"api_token", "customer_id", "api_url", "rate_limit", "max_retries", "ignore_mute"}
 	for _, attr := range requiredAttrs {
 		found := false
 		for _, block := range schemaResp.Provider.Block.Attributes {

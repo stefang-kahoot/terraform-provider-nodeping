@@ -8,8 +8,11 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
@@ -172,8 +175,15 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	})
 
 	createReq := r.buildCreateRequest(ctx, &plan, &resp.Diagnostics)
+	ignoreMute := r.muteIgnored(ctx, req.Config, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	// Left out, NodePing keeps the check's mute as it is, including a mute set
+	// after the plan was made.
+	if ignoreMute {
+		createReq.Mute = nil
 	}
 
 	updateReq := client.CheckUpdateRequest{CheckCreateRequest: createReq, Tags: createReq.Tags}
@@ -194,12 +204,21 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	plannedModified := plan.Modified
 	plannedTagsAll := plan.TagsAll
 	plannedPassword := plan.Password
+	plannedMute := plan.Mute
 
 	r.mapCheckToModel(ctx, check, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	preservePassword(&plan, plannedPassword)
+
+	// NodePing answers with the mute it holds, which can be one set after the
+	// plan was made. An ignored mute keeps the planned value, so the apply
+	// stays consistent with its plan; the next refresh reads the real one,
+	// and since it is ignored, plans nothing.
+	if ignoreMute {
+		plan.Mute = plannedMute
+	}
 
 	// Restore original target if it's semantically equivalent (trailing slash difference)
 	if normalizeURL(originalTarget.ValueString()) == normalizeURL(plan.Target.ValueString()) {
@@ -354,6 +373,89 @@ func (r *CheckResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanR
 		return
 	}
 
+	r.planTagsAll(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	r.planIgnoredMute(ctx, req, resp)
+}
+
+// planIgnoredMute plans the prior state's mute for a check whose mute is left
+// to NodePing (see muteIgnored), so that no plan changes it. The prior state
+// holds what the last refresh read from NodePing. A new check has no prior
+// state and starts unmuted, as it always has.
+func (r *CheckResource) planIgnoredMute(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || !r.muteIgnored(ctx, req.Config, &resp.Diagnostics) {
+		return
+	}
+
+	var priorMute types.Bool
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("mute"), &priorMute)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("mute"), priorMute)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Before this ran, the schema default had planned mute false. A plan that
+	// differs from the prior state is one in which the framework marks every
+	// Computed attribute the configuration leaves unset as unknown -- label,
+	// on a check without one -- so a check muted in NodePing would still plan
+	// an update, of nothing but those unknowns. If nothing else changes, plan
+	// the prior state as it is.
+	if unchangedButForUnknowns(resp.Plan.Raw, req.Config.Raw, req.State.Raw) {
+		resp.Plan.Raw = req.State.Raw
+	}
+}
+
+// unchangedButForUnknowns reports whether plan is prior with nothing changed
+// but values left unknown where the configuration has none.
+func unchangedButForUnknowns(plan, config, prior tftypes.Value) bool {
+	filled, err := tftypes.Transform(plan, func(p *tftypes.AttributePath, v tftypes.Value) (tftypes.Value, error) {
+		if v.IsKnown() {
+			return v, nil
+		}
+		if configured, ok := valueAt(config, p); !ok || !configured.IsNull() {
+			return v, nil
+		}
+		if before, ok := valueAt(prior, p); ok {
+			return before, nil
+		}
+		return v, nil
+	})
+	return err == nil && filled.Equal(prior)
+}
+
+// valueAt returns the value at a path, if there is one.
+func valueAt(v tftypes.Value, p *tftypes.AttributePath) (tftypes.Value, bool) {
+	got, _, err := tftypes.WalkAttributePath(v, p)
+	if err != nil {
+		return tftypes.Value{}, false
+	}
+	value, ok := got.(tftypes.Value)
+	return value, ok
+}
+
+// muteIgnored reports whether the provider's ignore_mute leaves the check's
+// mute to NodePing: it does, unless the configuration sets mute itself. The
+// configuration and not the plan tells, since the schema default fills in the
+// plan.
+func (r *CheckResource) muteIgnored(ctx context.Context, config tfsdk.Config, diags *diag.Diagnostics) bool {
+	if r.client == nil || !r.client.IgnoreMute() {
+		return false
+	}
+
+	var mute types.Bool
+	diags.Append(config.GetAttribute(ctx, path.Root("mute"), &mute)...)
+	return mute.IsNull()
+}
+
+// planTagsAll plans tags_all: the check's tags merged with the provider's
+// default_tags.
+func (r *CheckResource) planTagsAll(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	var plan CheckResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {

@@ -226,7 +226,7 @@ terraform import nodeping_check.example 201205050153W2Q4C-0J2HSIRF
 				Default:     int64default.StaticInt64(2),
 			},
 			"mute": schema.BoolAttribute{
-				Description: "Mute all notifications for this check.",
+				Description: "Mute all notifications for this check. With the provider's ignore_mute set and mute left out, the check's mute is left to NodePing.",
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),

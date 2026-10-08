@@ -40,6 +40,7 @@ type NodePingProviderModel struct {
 	RetryWaitMin types.Int64   `tfsdk:"retry_wait_min"`
 	RetryWaitMax types.Int64   `tfsdk:"retry_wait_max"`
 	DefaultTags  types.List    `tfsdk:"default_tags"`
+	IgnoreMute   types.Bool    `tfsdk:"ignore_mute"`
 }
 
 func New(version string) func() provider.Provider {
@@ -115,6 +116,19 @@ resource "nodeping_check" "example" {
 ` + "```" + `
 
 The resulting check will have tags: ` + "`[\"managed-by-terraform\", \"team-devops\", \"production\"]`" + `. Duplicate tags are automatically removed.
+
+## Muting Checks in NodePing
+
+Set ` + "`ignore_mute`" + ` when checks are muted and unmuted in the NodePing web interface rather than in Terraform:
+
+` + "```hcl" + `
+provider "nodeping" {
+  api_token   = var.nodeping_token
+  ignore_mute = true
+}
+` + "```" + `
+
+Terraform then leaves ` + "`mute`" + ` alone on every check whose configuration does not set it: a plan never changes it, and an update does not send it, so a check muted in NodePing stays muted, even if it was muted after the plan was made. A check that sets ` + "`mute`" + ` itself is still managed. A new check starts unmuted.
 `,
 		Attributes: map[string]schema.Attribute{
 			"api_token": schema.StringAttribute{
@@ -154,6 +168,11 @@ The resulting check will have tags: ` + "`[\"managed-by-terraform\", \"team-devo
 				MarkdownDescription: "Default tags to apply to all resources that support tags (e.g., checks). These tags are merged with resource-specific tags.",
 				Optional:            true,
 				ElementType:         types.StringType,
+			},
+			"ignore_mute": schema.BoolAttribute{
+				Description:         "Leave mute to NodePing on every check whose configuration does not set it: a plan never changes it and an update does not send it, so a check muted or unmuted in the NodePing web interface stays that way. A check that sets mute is still managed. Defaults to false.",
+				MarkdownDescription: "Leave `mute` to NodePing on every check whose configuration does not set it: a plan never changes it and an update does not send it, so a check muted or unmuted in the NodePing web interface stays that way. A check that sets `mute` is still managed. Defaults to `false`.",
+				Optional:            true,
 			},
 		},
 	}
@@ -235,6 +254,7 @@ func (p *NodePingProvider) Configure(ctx context.Context, req provider.Configure
 		RetryMaxWait: retryWaitMax,
 		UserAgent:    "terraform-provider-nodeping/" + p.version,
 		DefaultTags:  defaultTags,
+		IgnoreMute:   config.IgnoreMute.ValueBool(),
 	}
 
 	c := client.NewClient(clientCfg)

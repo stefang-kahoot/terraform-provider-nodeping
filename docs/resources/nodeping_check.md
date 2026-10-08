@@ -194,7 +194,7 @@ resource "nodeping_check" "service" {
 - `interval` - (Optional) Check interval in minutes. Can be `0.25`, `0.5`, or any integer >= 1. Defaults to `15`.
 - `threshold` - (Optional) Timeout in seconds. Defaults to `5`.
 - `sens` - (Optional) Number of rechecks before status change. Defaults to `2`.
-- `mute` - (Optional) Mute all notifications. Defaults to `false`.
+- `mute` - (Optional) Mute all notifications. Defaults to `false`. With the provider's `ignore_mute` set, a check that leaves `mute` out has its mute left to NodePing: Terraform neither plans nor sends it, so a mute set in the NodePing web interface stays.
 - `dep` - (Optional) Check ID for notification dependency.
 - `description` - (Optional) Description text (max 1000 characters).
 - `autodiag` - (Optional) Enable automated diagnostics. Defaults to `false`.
