@@ -208,6 +208,16 @@ func (c *Client) executeRequest(ctx context.Context, opts requestOptions, result
 		return c.handleErrorResponse(resp.StatusCode, respBody)
 	}
 
+	// NodePing answers most failures with 200 and {"error": "..."}: a create
+	// or update it rejects, and a read or delete of an ID it does not have.
+	// Decoded as the result, that would pass for success.
+	if msg := bodyError(respBody); msg != "" {
+		return &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    msg,
+		}
+	}
+
 	if result != nil && len(respBody) > 0 {
 		if err := json.Unmarshal(respBody, result); err != nil {
 			return fmt.Errorf("failed to unmarshal response: %w", err)
@@ -230,6 +240,16 @@ func (c *Client) handleErrorResponse(statusCode int, body []byte) error {
 		StatusCode: statusCode,
 		Message:    string(body),
 	}
+}
+
+// bodyError returns the message of a top-level "error" in a JSON object, or
+// "" if body has none.
+func bodyError(body []byte) string {
+	var errResp ErrorResponse
+	if err := json.Unmarshal(body, &errResp); err != nil {
+		return ""
+	}
+	return errResp.Error
 }
 
 func (c *Client) calculateBackoff(attempt int) time.Duration {
