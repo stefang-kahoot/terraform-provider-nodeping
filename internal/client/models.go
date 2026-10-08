@@ -268,6 +268,11 @@ type CheckCreateRequest struct {
 
 type CheckUpdateRequest struct {
 	CheckCreateRequest
+	// Tags takes the place of the embedded omitempty one: NodePing keeps a
+	// check's tags when an update leaves them out, so removing the last tag
+	// has to send an empty list. A nil Tags goes out as null, which NodePing
+	// ignores as well.
+	Tags []string `json:"tags"`
 }
 
 type Notification struct {

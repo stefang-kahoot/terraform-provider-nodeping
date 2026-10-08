@@ -124,3 +124,39 @@ func TestCheckDecodesQueueOfEitherShape(t *testing.T) {
 		t.Errorf("decoded %d checks, want 3", len(checks))
 	}
 }
+
+// NodePing keeps a check's tags when an update leaves them out, and ignores
+// null, so the only way to remove the last tag is an update that sends an
+// empty list. A create has nothing to keep and may leave them out.
+func TestCheckUpdateRequestAlwaysSendsTags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		req  any
+		want string
+	}{
+		{"an update sends an empty list", CheckUpdateRequest{Tags: []string{}}, `[]`},
+		{"an update sends the tags", CheckUpdateRequest{Tags: []string{"a"}}, `["a"]`},
+		{"an update sends nil as null", CheckUpdateRequest{}, `null`},
+		{"a create leaves no tags out", CheckCreateRequest{Tags: []string{}}, ``},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			body, err := json.Marshal(tt.req)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(body, &fields); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if got := string(fields["tags"]); got != tt.want {
+				t.Errorf("tags = %q, want %q in %s", got, tt.want, body)
+			}
+		})
+	}
+}

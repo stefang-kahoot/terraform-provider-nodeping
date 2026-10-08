@@ -253,6 +253,12 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
+		// NodePing ignores "tags": null on an update and keeps the check's
+		// tags; only an empty list clears them.
+		if v, ok := req["tags"]; ok && v == nil {
+			delete(req, "tags")
+		}
+
 		if label, ok := req["label"]; ok {
 			check["label"] = label
 		}
