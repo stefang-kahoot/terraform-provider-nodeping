@@ -523,6 +523,12 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 		req.PostData = plan.PostData.ValueString()
 	}
 
+	if !plan.Fields.IsNull() && !plan.Fields.IsUnknown() {
+		var fields map[string]checkattr.FieldModel
+		diags.Append(plan.Fields.ElementsAs(ctx, &fields, false)...)
+		req.Fields = fieldsToAPI(fields)
+	}
+
 	if !plan.Port.IsNull() {
 		req.Port = int(plan.Port.ValueInt64())
 	}
@@ -680,6 +686,7 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 	model.SendHeaders = keep(model.SendHeaders, a.SendHeaders)
 	model.ReceiveHeaders = keep(model.ReceiveHeaders, a.ReceiveHeaders)
 	model.PostData = keep(model.PostData, a.PostData)
+	model.Fields = keep(model.Fields, a.Fields)
 
 	model.Port = keep(model.Port, a.Port)
 	model.Username = keep(model.Username, a.Username)
@@ -790,6 +797,30 @@ func notificationsToModel(in []checkattr.NotificationModel) []NotificationModel 
 			Delay:     n.Delay,
 			Schedule:  n.Schedule,
 		})
+	}
+	return out
+}
+
+// fieldsToAPI converts the configured fields to the request shape. A null min,
+// max or match is left out of the request rather than sent as zero.
+func fieldsToAPI(in map[string]checkattr.FieldModel) map[string]client.CheckField {
+	if len(in) == 0 {
+		return nil
+	}
+
+	out := make(map[string]client.CheckField, len(in))
+	for key, f := range in {
+		field := client.CheckField{
+			Name:  f.Name.ValueString(),
+			Match: f.Match.ValueString(),
+		}
+		if !f.Min.IsNull() && !f.Min.IsUnknown() {
+			field.Min = f.Min.ValueFloat64()
+		}
+		if !f.Max.IsNull() && !f.Max.IsUnknown() {
+			field.Max = f.Max.ValueFloat64()
+		}
+		out[key] = field
 	}
 	return out
 }

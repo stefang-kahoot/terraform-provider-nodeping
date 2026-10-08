@@ -2,6 +2,7 @@ package check
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -10,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/checkattr"
 )
 
 // The boolean decoding this package used to carry its own copy of now lives
@@ -366,5 +368,71 @@ func TestMergeTagsDoesNotAliasInputs(t *testing.T) {
 	}
 	if configured[0] != "website" {
 		t.Errorf("mergeTags aliased its configuredTags argument: %v", configured)
+	}
+}
+
+// A field's min, max and match are each optional: a null one is left out of
+// the request, while 0 is a real bound and has to be sent.
+func TestFieldsToAPI(t *testing.T) {
+	t.Parallel()
+
+	got := fieldsToAPI(map[string]checkattr.FieldModel{
+		"A": {
+			Name:  types.StringValue("status"),
+			Min:   types.Float64Value(200),
+			Max:   types.Float64Value(200),
+			Match: types.StringNull(),
+		},
+		"B": {
+			Name:  types.StringValue("errors"),
+			Min:   types.Float64Value(0),
+			Max:   types.Float64Null(),
+			Match: types.StringValue("none"),
+		},
+	})
+
+	body, err := json.Marshal(client.CheckCreateRequest{Type: "HTTPPARSE", Fields: got})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := `{"type":"HTTPPARSE","fields":{"A":{"name":"status","min":200,"max":200},"B":{"name":"errors","min":0,"match":"none"}}}`
+	if string(body) != want {
+		t.Errorf("request = %s\nwant      %s", body, want)
+	}
+
+	if fieldsToAPI(nil) != nil {
+		t.Error("no fields must leave the request's fields out")
+	}
+}
+
+// fields is only refreshed from the API, never invented: a configuration
+// that leaves it out of a check carrying fields has to see them in state, so
+// the plan proposes removing them instead of silently dropping them on the
+// next unrelated write.
+func TestMapCheckToModelReadsFieldsTheConfigurationLacks(t *testing.T) {
+	t.Parallel()
+
+	check := &client.Check{
+		ID:      "MOCK-1",
+		Type:    "HTTP",
+		Enabled: "active",
+		Parameters: client.CheckParameters{
+			Target: "https://example.com/variables.json",
+			Fields: map[string]client.CheckField{
+				"F7L814": {Name: "status", Min: float64(200), Max: float64(200)},
+			},
+		},
+	}
+
+	model := CheckResourceModel{Fields: types.MapNull(checkattr.FieldType)}
+	r := &CheckResource{}
+	var diags diag.Diagnostics
+	r.mapCheckToModel(context.Background(), check, &model, &diags)
+
+	if diags.HasError() {
+		t.Fatalf("mapping raised %v", diags.Errors())
+	}
+	if model.Fields.IsNull() || len(model.Fields.Elements()) != 1 {
+		t.Errorf("fields = %s, want the one field NodePing stores", model.Fields)
 	}
 }

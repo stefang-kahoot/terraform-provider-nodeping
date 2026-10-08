@@ -54,6 +54,7 @@ type CheckResourceModel struct {
 	SendHeaders    types.Map           `tfsdk:"sendheaders"`
 	ReceiveHeaders types.Map           `tfsdk:"receiveheaders"`
 	PostData       types.String        `tfsdk:"postdata"`
+	Fields         types.Map           `tfsdk:"fields"`
 	Port           types.Int64         `tfsdk:"port"`
 	Username       types.String        `tfsdk:"username"`
 	Password       types.String        `tfsdk:"password"`
@@ -326,6 +327,31 @@ terraform import nodeping_check.example 201205050153W2Q4C-0J2HSIRF
 			"postdata": schema.StringAttribute{
 				Description: "POST data for HTTPADV checks.",
 				Optional:    true,
+			},
+			"fields": schema.MapNestedAttribute{
+				Description:         "Values to parse out of the response and the range or string each must match, keyed by NodePing's key for the field (any string; the web interface makes up a random one). HTTPPARSE, SNMP and the database types.",
+				MarkdownDescription: "Values to parse out of the response and the range or string each must match, keyed by NodePing's key for the field (any string; the web interface makes up a random one). `HTTPPARSE`, `SNMP` and the database types.",
+				Optional:            true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"name": schema.StringAttribute{
+							Description: "Name or path of the value to parse out of the response.",
+							Required:    true,
+						},
+						"min": schema.Float64Attribute{
+							Description: "Lowest acceptable value.",
+							Optional:    true,
+						},
+						"max": schema.Float64Attribute{
+							Description: "Highest acceptable value.",
+							Optional:    true,
+						},
+						"match": schema.StringAttribute{
+							Description: "String the value has to match. MYSQL, PGSQL and MONGODB only.",
+							Optional:    true,
+						},
+					},
+				},
 			},
 			"port": schema.Int64Attribute{
 				Description: "Port number for the check.",
