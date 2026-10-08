@@ -391,13 +391,13 @@ func TestFieldsToAPI(t *testing.T) {
 		},
 	})
 
-	body, err := json.Marshal(client.CheckCreateRequest{Type: "HTTPPARSE", Fields: got})
+	body, err := json.Marshal(got)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	want := `{"type":"HTTPPARSE","fields":{"A":{"name":"status","min":200,"max":200},"B":{"name":"errors","min":0,"match":"none"}}}`
+	want := `{"A":{"name":"status","min":200,"max":200},"B":{"name":"errors","min":0,"match":"none"}}`
 	if string(body) != want {
-		t.Errorf("request = %s\nwant      %s", body, want)
+		t.Errorf("fields = %s\nwant     %s", body, want)
 	}
 
 	if fieldsToAPI(nil) != nil {
