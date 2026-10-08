@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/http/httptrace"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -118,10 +119,9 @@ func TestDoRequestRetriesErrorStatuses(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			attempts := 0
+			var attempts atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				attempts++
-				if attempts == 1 {
+				if attempts.Add(1) == 1 {
 					w.WriteHeader(tt.status)
 					_, _ = w.Write([]byte(tt.body))
 					return
@@ -133,8 +133,8 @@ func TestDoRequestRetriesErrorStatuses(t *testing.T) {
 			var result Check
 			err := retryClient(server.URL, 3).doRequest(context.Background(), requestOptions{method: tt.method, path: "/checks"}, &result)
 
-			if attempts != tt.wantAttempts {
-				t.Errorf("expected %d attempts, got %d", tt.wantAttempts, attempts)
+			if got := int(attempts.Load()); got != tt.wantAttempts {
+				t.Errorf("expected %d attempts, got %d", tt.wantAttempts, got)
 			}
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
@@ -147,12 +147,12 @@ func TestDoRequestRetriesErrorStatuses(t *testing.T) {
 }
 
 // dropFirst closes the connection without answering the first request, after
-// reading it, the way NodePing's end dropped some in October 2026.
-func dropFirst(t *testing.T, attempts *int) *httptest.Server {
+// reading it, the way NodePing's end dropped some in October 2026. The
+// handler runs on the server's goroutine, so it counts atomically.
+func dropFirst(t *testing.T, attempts *atomic.Int32) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		*attempts++
-		if *attempts == 1 {
+		if attempts.Add(1) == 1 {
 			_, _ = io.ReadAll(r.Body)
 			conn, _, err := w.(http.Hijacker).Hijack()
 			if err != nil {
@@ -169,7 +169,7 @@ func dropFirst(t *testing.T, attempts *int) *httptest.Server {
 }
 
 func TestDoRequestRetriesARealDroppedConnection(t *testing.T) {
-	attempts := 0
+	var attempts atomic.Int32
 	server := dropFirst(t, &attempts)
 
 	_, err := retryClient(server.URL, 3).GetCheck(context.Background(), "X")
@@ -177,21 +177,21 @@ func TestDoRequestRetriesARealDroppedConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if attempts != 2 {
-		t.Errorf("expected 2 attempts, got %d", attempts)
+	if got := attempts.Load(); got != 2 {
+		t.Errorf("expected 2 attempts, got %d", got)
 	}
 }
 
 // A create whose connection drops is not sent again, and the error names the
 // check and says it may exist.
 func TestCreateCheckAfterADroppedConnection(t *testing.T) {
-	attempts := 0
+	var attempts atomic.Int32
 	server := dropFirst(t, &attempts)
 
 	_, err := retryClient(server.URL, 3).CreateCheck(context.Background(), CheckCreateRequest{Type: "HTTP", Label: "acc-dropped"})
 
-	if attempts != 1 {
-		t.Errorf("expected 1 attempt, got %d", attempts)
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("expected 1 attempt, got %d", got)
 	}
 	if _, ok := errors.AsType[*UncertainWriteError](err); !ok {
 		t.Fatalf("expected UncertainWriteError, got %T (%v)", err, err)
@@ -205,10 +205,9 @@ func TestCreateCheckAfterADroppedConnection(t *testing.T) {
 
 // Every attempt waits for the rate limiter, retries included.
 func TestDoRequestRateLimitsRetries(t *testing.T) {
-	attempts := 0
+	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		if attempts < 3 {
+		if attempts.Add(1) < 3 {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -246,10 +245,9 @@ func TestDoRequestHonoursRetryAfter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			attempts := 0
+			var attempts atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				attempts++
-				if attempts == 1 {
+				if attempts.Add(1) == 1 {
 					w.Header().Set("Retry-After", tt.retryAfter)
 					w.WriteHeader(http.StatusTooManyRequests)
 					return

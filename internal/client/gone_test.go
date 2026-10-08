@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -58,13 +59,14 @@ var goneResources = []struct {
 
 // goneServer answers any request for goneID with status and body, and the
 // list with goneID in it or not; a listStatus other than 200 fails the list.
-// It counts the list requests.
-func goneServer(t *testing.T, path string, status int, body string, listed bool, listStatus int, lists *int) *httptest.Server {
+// It counts the list requests, atomically: the handler runs on the server's
+// goroutine.
+func goneServer(t *testing.T, path string, status int, body string, listed bool, listStatus int, lists *atomic.Int32) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case path:
-			*lists++
+			lists.Add(1)
 			w.WriteHeader(listStatus)
 			switch {
 			case listStatus != http.StatusOK:
@@ -99,7 +101,7 @@ func TestGoneIsNotFound(t *testing.T) {
 			call func(*Client, context.Context, string) error
 		}{{"get", res.getBody, res.get}, {"delete", res.delBody, res.del}} {
 			t.Run(res.name+" "+op.name, func(t *testing.T) {
-				lists := 0
+				var lists atomic.Int32
 				server := goneServer(t, res.path, http.StatusOK, op.body, false, http.StatusOK, &lists)
 
 				err := op.call(goneClient(server), context.Background(), goneID)
@@ -107,8 +109,8 @@ func TestGoneIsNotFound(t *testing.T) {
 				if _, ok := errors.AsType[*NotFoundError](err); !ok {
 					t.Fatalf("expected *NotFoundError, got %T (%v)", err, err)
 				}
-				if lists != 1 {
-					t.Errorf("expected 1 list request, got %d", lists)
+				if got := lists.Load(); got != 1 {
+					t.Errorf("expected 1 list request, got %d", got)
 				}
 			})
 		}
@@ -125,7 +127,7 @@ func TestGoneButListedIsAnError(t *testing.T) {
 			call func(*Client, context.Context, string) error
 		}{{"get", res.getBody, res.get}, {"delete", res.delBody, res.del}} {
 			t.Run(res.name+" "+op.name, func(t *testing.T) {
-				lists := 0
+				var lists atomic.Int32
 				server := goneServer(t, res.path, http.StatusOK, op.body, true, http.StatusOK, &lists)
 
 				err := op.call(goneClient(server), context.Background(), goneID)
@@ -146,7 +148,7 @@ func TestGoneButListedIsAnError(t *testing.T) {
 
 // When the list fails too, the answer stays an error and says both.
 func TestGoneListFails(t *testing.T) {
-	lists := 0
+	var lists atomic.Int32
 	server := goneServer(t, "/checks", http.StatusOK, `{"error":"Error fetching check."}`, false, http.StatusBadRequest, &lists)
 
 	_, err := goneClient(server).GetCheck(context.Background(), goneID)
@@ -163,7 +165,7 @@ func TestGoneListFails(t *testing.T) {
 
 // A 404, should NodePing ever send one, is confirmed the same way.
 func TestGone404IsNotFound(t *testing.T) {
-	lists := 0
+	var lists atomic.Int32
 	server := goneServer(t, "/checks", http.StatusNotFound, `{"error":"Check not found"}`, false, http.StatusOK, &lists)
 
 	_, err := goneClient(server).GetCheck(context.Background(), goneID)
@@ -175,7 +177,7 @@ func TestGone404IsNotFound(t *testing.T) {
 
 // Other errors are returned as they are, without listing anything.
 func TestGoneOtherErrorsSkipTheList(t *testing.T) {
-	lists := 0
+	var lists atomic.Int32
 	server := goneServer(t, "/checks", http.StatusUnauthorized, `{"error":"Invalid token"}`, false, http.StatusOK, &lists)
 
 	_, err := goneClient(server).GetCheck(context.Background(), goneID)
@@ -183,7 +185,7 @@ func TestGoneOtherErrorsSkipTheList(t *testing.T) {
 	if _, ok := errors.AsType[*NotFoundError](err); ok || err == nil {
 		t.Fatalf("expected an error other than *NotFoundError, got %v", err)
 	}
-	if lists != 0 {
-		t.Errorf("expected no list request, got %d", lists)
+	if got := lists.Load(); got != 0 {
+		t.Errorf("expected no list request, got %d", got)
 	}
 }
