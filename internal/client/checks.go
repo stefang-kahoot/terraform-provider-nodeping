@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,11 +25,11 @@ func (c *Client) GetCheck(ctx context.Context, id string) (*Check, error) {
 		method: http.MethodGet,
 		path:   "/checks/" + url.PathEscape(id),
 	}, &result)
+	if err == nil && result.ID == "" {
+		err = errNoID
+	}
 	if err != nil {
-		if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.IsNotFound() {
-			return nil, &NotFoundError{ResourceType: "check", ResourceID: id}
-		}
-		return nil, fmt.Errorf("failed to get check: %w", err)
+		return nil, confirmGone(ctx, c.ListChecks, "check", id, fmt.Errorf("failed to get check: %w", err))
 	}
 	return &result, nil
 }
@@ -43,7 +42,11 @@ func (c *Client) CreateCheck(ctx context.Context, req CheckCreateRequest) (*Chec
 		body:   req,
 	}, &result)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create check: %w", err)
+		name := req.Label
+		if name == "" {
+			name = req.Target
+		}
+		return nil, createError("check", name, err)
 	}
 	return &result, nil
 }
@@ -68,7 +71,7 @@ func (c *Client) DeleteCheck(ctx context.Context, id string) error {
 		path:   "/checks/" + url.PathEscape(id),
 	}, &result)
 	if err != nil {
-		return fmt.Errorf("failed to delete check: %w", err)
+		return confirmGone(ctx, c.ListChecks, "check", id, fmt.Errorf("failed to delete check: %w", err))
 	}
 	if !result.OK {
 		return fmt.Errorf("delete check returned ok=false")

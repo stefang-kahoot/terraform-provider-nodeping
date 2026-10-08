@@ -35,6 +35,16 @@ func NewMockNodePingServer() *MockNodePingServer {
 	return m
 }
 
+// writeOK answers with status 200 and body. NodePing never answers 404 for an
+// ID it does not have: reads, updates and deletes of one get 200 with an
+// "error" body, or {} for a read of a contact or contact group. The handlers
+// use the answers the real API gave on 2026-10-08 (an update of an unknown
+// contact or contact group was not tried, so those keep a 404).
+func writeOK(w http.ResponseWriter, body string) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(body))
+}
+
 func (m *MockNodePingServer) Close() {
 	m.Server.Close()
 }
@@ -98,7 +108,7 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 	case http.MethodGet:
 		contact, ok := m.contacts[id]
 		if !ok {
-			http.Error(w, `{"error": "contact not found"}`, http.StatusNotFound)
+			writeOK(w, `{}`)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -130,7 +140,7 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 
 	case http.MethodDelete:
 		if _, ok := m.contacts[id]; !ok {
-			http.Error(w, `{"error": "contact not found"}`, http.StatusNotFound)
+			writeOK(w, `{"error":"Unable to find that contact"}`)
 			return
 		}
 		delete(m.contacts, id)
@@ -224,7 +234,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 	case http.MethodGet:
 		check, ok := m.checks[id]
 		if !ok {
-			http.Error(w, `{"error": "check not found"}`, http.StatusNotFound)
+			writeOK(w, `{"error":"Error fetching check."}`)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -233,7 +243,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 	case http.MethodPut:
 		check, ok := m.checks[id]
 		if !ok {
-			http.Error(w, `{"error": "check not found"}`, http.StatusNotFound)
+			writeOK(w, `{"error":"Unable to load check."}`)
 			return
 		}
 
@@ -269,7 +279,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 
 	case http.MethodDelete:
 		if _, ok := m.checks[id]; !ok {
-			http.Error(w, `{"error": "check not found"}`, http.StatusNotFound)
+			writeOK(w, `{"error":"Unable to find that check"}`)
 			return
 		}
 		delete(m.checks, id)
@@ -335,7 +345,7 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 	case http.MethodGet:
 		group, ok := m.contactgroups[id]
 		if !ok {
-			http.Error(w, `{"error": "contact group not found"}`, http.StatusNotFound)
+			writeOK(w, `{}`)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -367,7 +377,7 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 
 	case http.MethodDelete:
 		if _, ok := m.contactgroups[id]; !ok {
-			http.Error(w, `{"error": "contact group not found"}`, http.StatusNotFound)
+			writeOK(w, `{"error":"Unable to find group"}`)
 			return
 		}
 		delete(m.contactgroups, id)
@@ -419,6 +429,27 @@ func (m *MockNodePingServer) GetContactGroup(id string) (map[string]interface{},
 	defer m.mu.RUnlock()
 	g, ok := m.contactgroups[id]
 	return g, ok
+}
+
+// RemoveCheck, RemoveContact and RemoveContactGroup delete an object the way
+// someone deleting it in the NodePing web interface would: behind Terraform's
+// back.
+func (m *MockNodePingServer) RemoveCheck(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.checks, id)
+}
+
+func (m *MockNodePingServer) RemoveContact(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.contacts, id)
+}
+
+func (m *MockNodePingServer) RemoveContactGroup(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.contactgroups, id)
 }
 
 func (m *MockNodePingServer) GetCheck(id string) (map[string]interface{}, bool) {

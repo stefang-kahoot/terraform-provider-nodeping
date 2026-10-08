@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -26,11 +25,11 @@ func (c *Client) GetContactGroup(ctx context.Context, id string) (*ContactGroup,
 		method: http.MethodGet,
 		path:   "/contactgroups/" + url.PathEscape(id),
 	}, &result)
+	if err == nil && result.ID == "" {
+		err = errNoID
+	}
 	if err != nil {
-		if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.IsNotFound() {
-			return nil, &NotFoundError{ResourceType: "contact group", ResourceID: id}
-		}
-		return nil, fmt.Errorf("failed to get contact group: %w", err)
+		return nil, confirmGone(ctx, c.ListContactGroups, "contact group", id, fmt.Errorf("failed to get contact group: %w", err))
 	}
 	return &result, nil
 }
@@ -43,7 +42,7 @@ func (c *Client) CreateContactGroup(ctx context.Context, req ContactGroupCreateR
 		body:   req,
 	}, &result)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create contact group: %w", err)
+		return nil, createError("contact group", req.Name, err)
 	}
 	return &result, nil
 }
@@ -74,10 +73,7 @@ func (c *Client) DeleteContactGroup(ctx context.Context, id string) error {
 		path:   "/contactgroups/" + url.PathEscape(id),
 	}, &result)
 	if err != nil {
-		if apiErr, ok := errors.AsType[*APIError](err); ok && apiErr.IsNotFound() {
-			return &NotFoundError{ResourceType: "contact group", ResourceID: id}
-		}
-		return fmt.Errorf("failed to delete contact group: %w", err)
+		return confirmGone(ctx, c.ListContactGroups, "contact group", id, fmt.Errorf("failed to delete contact group: %w", err))
 	}
 	if !result.OK {
 		return fmt.Errorf("delete contact group returned ok=false")

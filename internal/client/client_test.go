@@ -204,6 +204,58 @@ func TestDoRequestNoRetryOn400(t *testing.T) {
 	}
 }
 
+// NodePing answers failures with 200 and an "error" body; these are answers
+// it gave the API on 2026-10-08.
+func TestDoRequestErrorInOKResponse(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		body   string
+	}{
+		{"create rejected", http.MethodPost, `{"error":"target: Invalid URL"}`},
+		{"update of an unknown check", http.MethodPut, `{"error":"Unable to load check."}`},
+		{"read of a deleted check", http.MethodGet, `{"error":"Error fetching check."}`},
+		{"delete of a deleted check", http.MethodDelete, `{"error":"Unable to find that check"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			attempts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts++
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			c := NewClient(ClientConfig{
+				APIToken:   "test-token",
+				BaseURL:    server.URL,
+				MaxRetries: 3,
+			})
+
+			var result Check
+			err := c.doRequest(context.Background(), requestOptions{
+				method: tt.method,
+				path:   "/checks/201205050153W2Q4C-0J2HSIRF",
+			}, &result)
+
+			apiErr, ok := errors.AsType[*APIError](err)
+			if !ok {
+				t.Fatalf("expected *APIError, got %T (%v)", err, err)
+			}
+			var want ErrorResponse
+			_ = json.Unmarshal([]byte(tt.body), &want)
+			if apiErr.StatusCode != http.StatusOK || apiErr.Message != want.Error {
+				t.Errorf("got status %d message %q, want 200 %q", apiErr.StatusCode, apiErr.Message, want.Error)
+			}
+			if attempts != 1 {
+				t.Errorf("expected 1 attempt (an error in a 200 is not retried), got %d", attempts)
+			}
+		})
+	}
+}
+
 func TestAPIErrorMethods(t *testing.T) {
 	tests := []struct {
 		name        string
