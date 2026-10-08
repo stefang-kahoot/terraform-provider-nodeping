@@ -832,3 +832,103 @@ resource "nodeping_check" "untagged" {
 		},
 	})
 }
+
+// Changing, adding and removing fields updates the check in place, and the
+// request carries the fields exactly as configured: the mock replaces the
+// stored parameters with each update, as NodePing does.
+func TestAccCheckResource_fields(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	config := func(fields string) string {
+		return providerConfig(mock.URL()) + `
+resource "nodeping_check" "test" {
+  type   = "HTTPPARSE"
+  target = "https://example.com/stats.json"
+  label  = "acc-fields"
+` + fields + `
+}
+`
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config(`
+  fields = {
+    A = { name = "status", min = 200, max = 200 }
+    B = { name = "load.avg", max = 2.5 }
+  }
+`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("nodeping_check.test", "fields.%", "2"),
+					resource.TestCheckResourceAttr("nodeping_check.test", "fields.A.name", "status"),
+					resource.TestCheckResourceAttr("nodeping_check.test", "fields.A.min", "200"),
+					resource.TestCheckResourceAttr("nodeping_check.test", "fields.B.max", "2.5"),
+					resource.TestCheckNoResourceAttr("nodeping_check.test", "fields.B.min"),
+				),
+			},
+			{
+				Config: config(`
+  fields = {
+    A = { name = "status", min = 200, max = 299 }
+    C = { name = "queue.length", min = 0 }
+  }
+`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("nodeping_check.test", "fields.%", "2"),
+					resource.TestCheckResourceAttr("nodeping_check.test", "fields.A.max", "299"),
+					resource.TestCheckNoResourceAttr("nodeping_check.test", "fields.B.name"),
+					resource.TestCheckResourceAttr("nodeping_check.test", "fields.C.min", "0"),
+				),
+			},
+			{
+				Config: config(""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr("nodeping_check.test", "fields.%"),
+				),
+			},
+		},
+	})
+}
+
+// The data sources read fields through the same mapping as the resource.
+func TestAccCheckDataSource_exposesFields(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig(mock.URL()) + `
+resource "nodeping_check" "src" {
+  type   = "HTTPPARSE"
+  target = "https://example.com/stats.json"
+  label  = "acc-ds-fields"
+
+  fields = {
+    A = { name = "status", min = 200, max = 200 }
+  }
+}
+
+data "nodeping_check" "by_id" {
+  id = nodeping_check.src.id
+}
+
+data "nodeping_checks" "all" {
+  type       = "HTTPPARSE"
+  depends_on = [nodeping_check.src]
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "fields.A.name", "status"),
+					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "fields.A.max", "200"),
+					resource.TestCheckNoResourceAttr("data.nodeping_check.by_id", "fields.A.match"),
+					resource.TestCheckResourceAttr("data.nodeping_checks.all", "checks.0.fields.A.min", "200"),
+				),
+			},
+		},
+	})
+}

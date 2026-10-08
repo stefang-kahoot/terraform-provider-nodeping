@@ -22,7 +22,9 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -68,6 +70,10 @@ type Model struct {
 	ReceiveHeaders types.Map    `tfsdk:"receiveheaders"`
 	PostData       types.String `tfsdk:"postdata"`
 
+	// HTTPPARSE and the database types: a map of FieldModel, keyed by
+	// NodePing's own key for each field.
+	Fields types.Map `tfsdk:"fields"`
+
 	// Connection
 	Port       types.Int64  `tfsdk:"port"`
 	Username   types.String `tfsdk:"username"`
@@ -109,6 +115,24 @@ type NotificationModel struct {
 	Delay     types.Int64  `tfsdk:"delay"`
 	Schedule  types.String `tfsdk:"schedule"`
 }
+
+// FieldModel is one entry of `fields`: a value parsed out of the response and
+// the range or string it has to match.
+type FieldModel struct {
+	Name  types.String  `tfsdk:"name"`
+	Min   types.Float64 `tfsdk:"min"`
+	Max   types.Float64 `tfsdk:"max"`
+	Match types.String  `tfsdk:"match"`
+}
+
+// FieldType is the element type of `fields`, on the resource and the data
+// sources alike.
+var FieldType = types.ObjectType{AttrTypes: map[string]attr.Type{
+	"name":  types.StringType,
+	"min":   types.Float64Type,
+	"max":   types.Float64Type,
+	"match": types.StringType,
+}}
 
 // Attributes returns every attribute as Computed. The singular data source
 // overrides `id` to Required; the plural nests the whole map unchanged.
@@ -161,6 +185,18 @@ func Attributes() map[string]schema.Attribute {
 		"sendheaders":    strMap("Headers sent with the request."),
 		"receiveheaders": strMap("Headers the response is checked for."),
 		"postdata":       str("Body sent with the request."),
+		"fields": schema.MapNestedAttribute{
+			Description: "Values parsed out of the response and the range or string each must match, keyed by NodePing's key for the field. HTTPPARSE, SNMP and the database types.",
+			Computed:    true,
+			NestedObject: schema.NestedAttributeObject{
+				Attributes: map[string]schema.Attribute{
+					"name":  str("Name or path of the value parsed out of the response."),
+					"min":   schema.Float64Attribute{Description: "Lowest acceptable value.", Computed: true},
+					"max":   schema.Float64Attribute{Description: "Highest acceptable value.", Computed: true},
+					"match": str("String the value has to match. MYSQL, PGSQL and MONGODB only."),
+				},
+			},
+		},
 
 		"port":       i64("Port the check connects to."),
 		"username":   str("Username used for authentication. The password is deliberately not exposed."),
@@ -256,6 +292,28 @@ func OptionalInt64(v interface{}) types.Int64 {
 		return types.Int64Value(parsed)
 	default:
 		return types.Int64Null()
+	}
+}
+
+// OptionalFloat64 accepts the JSON number and the stringified forms.
+func OptionalFloat64(v interface{}) types.Float64 {
+	switch val := v.(type) {
+	case nil:
+		return types.Float64Null()
+	case float64:
+		return types.Float64Value(val)
+	case int:
+		return types.Float64Value(float64(val))
+	case int64:
+		return types.Float64Value(float64(val))
+	case string:
+		parsed, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			return types.Float64Null()
+		}
+		return types.Float64Value(parsed)
+	default:
+		return types.Float64Null()
 	}
 }
 
@@ -403,7 +461,32 @@ func FromAPI(ctx context.Context, check *client.Check, diags *diag.Diagnostics) 
 	m.Tags = stringList(ctx, check.Tags, diags)
 	m.RunLocations = RunLocations(ctx, check.RunLocations, diags)
 	m.Notifications = notifications(check.Notifications)
+	m.Fields = fields(ctx, p.Fields, diags)
 
+	return m
+}
+
+// fields maps the API's keyed list as it is, keys included: they are
+// arbitrary (random when the web interface makes them), but they are how
+// NodePing identifies each field, so a configuration has to name the same
+// ones to read back without a diff. No fields at all reads as null.
+func fields(ctx context.Context, in map[string]client.CheckField, diags *diag.Diagnostics) types.Map {
+	if len(in) == 0 {
+		return types.MapNull(FieldType)
+	}
+
+	out := make(map[string]FieldModel, len(in))
+	for key, f := range in {
+		out[key] = FieldModel{
+			Name:  types.StringValue(f.Name),
+			Min:   OptionalFloat64(f.Min),
+			Max:   OptionalFloat64(f.Max),
+			Match: OptionalString(f.Match),
+		}
+	}
+
+	m, d := types.MapValueFrom(ctx, FieldType, out)
+	diags.Append(d...)
 	return m
 }
 

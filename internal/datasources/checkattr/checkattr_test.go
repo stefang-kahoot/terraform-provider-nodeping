@@ -575,3 +575,98 @@ func TestFromAPIReadsNullHeadersAsAbsent(t *testing.T) {
 		t.Errorf("ReceiveHeaders = %v, want %v", m.ReceiveHeaders, want)
 	}
 }
+
+func TestOptionalFloat64(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    interface{}
+		wantNull bool
+		want     float64
+	}{
+		{name: "nil is null", input: nil, wantNull: true},
+		{name: "float64", input: float64(200), want: 200},
+		{name: "fractional", input: float64(0.5), want: 0.5},
+		{name: "zero is a value", input: float64(0), want: 0},
+		{name: "int", input: 3, want: 3},
+		{name: "int64", input: int64(999999999), want: 999999999},
+		{name: "numeric string", input: "1.5", want: 1.5},
+		{name: "non-numeric string is null", input: "high", wantNull: true},
+		{name: "empty string is null", input: "", wantNull: true},
+		{name: "unhandled type is null", input: true, wantNull: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := OptionalFloat64(tt.input)
+			if tt.wantNull {
+				if !got.IsNull() {
+					t.Errorf("OptionalFloat64(%#v) = %v, want null", tt.input, got)
+				}
+				return
+			}
+			if got.IsNull() || got.ValueFloat64() != tt.want {
+				t.Errorf("OptionalFloat64(%#v) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// fields reads back keyed exactly as NodePing stores it. The keys are
+// arbitrary, but a configuration has to name the same ones, so they cannot be
+// dropped or renumbered.
+func TestFromAPIMapsFields(t *testing.T) {
+	t.Parallel()
+
+	var check client.Check
+	body := `{"_id": "CHK1", "type": "HTTPPARSE", "parameters": {
+		"target": "https://example.com/stats.json",
+		"fields": {
+			"F7L814": {"name": "status", "min": 200, "max": 200},
+			"A":      {"name": "load", "min": "0.5"},
+			"B":      {"name": "rows", "max": 0, "match": "ok"}
+		}
+	}}`
+	if err := json.Unmarshal([]byte(body), &check); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	var diags diag.Diagnostics
+	m := FromAPI(context.Background(), &check, &diags)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %+v", diags)
+	}
+
+	field := func(name string, min, max types.Float64, match types.String) attr.Value {
+		return types.ObjectValueMust(FieldType.AttrTypes, map[string]attr.Value{
+			"name": types.StringValue(name), "min": min, "max": max, "match": match,
+		})
+	}
+	want := types.MapValueMust(FieldType, map[string]attr.Value{
+		"F7L814": field("status", types.Float64Value(200), types.Float64Value(200), types.StringNull()),
+		"A":      field("load", types.Float64Value(0.5), types.Float64Null(), types.StringNull()),
+		"B":      field("rows", types.Float64Null(), types.Float64Value(0), types.StringValue("ok")),
+	})
+	if !m.Fields.Equal(want) {
+		t.Errorf("Fields = %v, want %v", m.Fields, want)
+	}
+}
+
+// A check without fields reads as a typed null, so state can still be written.
+func TestFromAPIReadsNoFieldsAsNull(t *testing.T) {
+	t.Parallel()
+
+	var diags diag.Diagnostics
+	m := FromAPI(context.Background(), &client.Check{ID: "CHK1", Type: "HTTP"}, &diags)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %+v", diags)
+	}
+	if !m.Fields.IsNull() {
+		t.Errorf("Fields = %v, want null", m.Fields)
+	}
+	if !m.Fields.ElementType(context.Background()).Equal(FieldType) {
+		t.Errorf("Fields element type = %v, want %v", m.Fields.ElementType(context.Background()), FieldType)
+	}
+}

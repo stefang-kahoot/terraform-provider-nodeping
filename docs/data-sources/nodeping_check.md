@@ -55,6 +55,11 @@ output "expected_content" {
 - `contentstring`, `regex`, `invert`, `follow`, `method`, `statuscode`,
   `sendheaders`, `receiveheaders`, `postdata`
 
+### Parsed fields
+
+- `fields` - Values parsed out of the response, keyed by NodePing's key for
+  each field. Each entry contains `name`, `min`, `max` and `match`.
+
 ### Connection
 
 - `port`, `username`, `secure`, `verify`, `ipv6`, `servername`, `transport`

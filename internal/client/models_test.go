@@ -103,3 +103,24 @@ func assertHeaders(t *testing.T, field string, got HeaderMap, want map[string]st
 		t.Errorf("%s = %#v, want %#v", field, got, want)
 	}
 }
+
+// NodePing stores "queue": false on disabled checks and a queue name on the
+// others. Typed as a string, a single disabled check failed to decode -- and
+// with it the whole list, since ListChecks decodes every check in one go.
+func TestCheckDecodesQueueOfEitherShape(t *testing.T) {
+	t.Parallel()
+
+	body := `{
+		"CHK1": {"_id": "CHK1", "enable": "active", "queue": "bBv6Ivd0qe"},
+		"CHK2": {"_id": "CHK2", "enable": "inactive", "queue": false},
+		"CHK3": {"_id": "CHK3", "enable": "inactive"}
+	}`
+
+	var checks map[string]Check
+	if err := json.Unmarshal([]byte(body), &checks); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(checks) != 3 {
+		t.Errorf("decoded %d checks, want 3", len(checks))
+	}
+}

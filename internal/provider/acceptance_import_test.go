@@ -110,6 +110,20 @@ func TestAccCheckResource_importRoundTripsTypeSpecificParameters(t *testing.T) {
 			ignore: []string{"snmpcom"},
 		},
 		{
+			name: "HTTPPARSE keeps its fields",
+			body: `
+  type   = "HTTPPARSE"
+  target = "https://example.com/stats.json"
+  label  = "acc-import-httpparse"
+
+  fields = {
+    A = { name = "status", min = 200, max = 200 }
+    B = { name = "load.avg", max = 2.5 }
+    C = { name = "queue.length", min = 0 }
+  }
+`,
+		},
+		{
 			name: "HTTP keeps the preferred probe location",
 			body: `
   type    = "HTTP"
@@ -466,6 +480,128 @@ resource "nodeping_check" "imported" {
 				ImportState:     true,
 				ImportStateKind: resource.ImportBlockWithID,
 				ImportStateId:   "NULL-HEADER",
+			},
+		},
+	})
+}
+
+// NodePing keeps a check's fields even on check types that ignore them: the
+// split tool's variables.json check is an HTTP check that still carries the
+// HTTPPARSE fields it was set up with. Before fields existed on the resource
+// such a check imported "clean" with its fields invisible, and the first write
+// would have dropped them. It has to import with them, keyed as NodePing
+// stores them.
+func TestAccCheckResource_importReadsFields(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	mock.AddCheck("HTTP-FIELDS", map[string]interface{}{
+		"_id":      "HTTP-FIELDS",
+		"type":     "HTTP",
+		"label":    "acc-http-fields",
+		"enable":   "active",
+		"interval": 1,
+		"parameters": map[string]interface{}{
+			"target":    "https://example.com/variables.json",
+			"threshold": 5,
+			"sens":      2,
+			"follow":    false,
+			"fields": map[string]interface{}{
+				"F7L814": map[string]interface{}{"name": "status", "min": 200, "max": 200},
+				"FO7I39": map[string]interface{}{"name": "content.400.defaultOutput", "min": 1, "max": 99},
+			},
+		},
+	})
+
+	config := providerConfig(mock.URL()) + `
+resource "nodeping_check" "imported" {
+  type     = "HTTP"
+  target   = "https://example.com/variables.json"
+  label    = "acc-http-fields"
+  enabled  = true
+  interval = 1
+  follow   = false
+
+  fields = {
+    F7L814 = { name = "status", min = 200, max = 200 }
+    FO7I39 = { name = "content.400.defaultOutput", min = 1, max = 99 }
+  }
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config:          config,
+				ResourceName:    "nodeping_check.imported",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithID,
+				ImportStateId:   "HTTP-FIELDS",
+			},
+		},
+	})
+}
+
+// A disabled check stores "queue": false, which the provider once failed to
+// decode, so no disabled check could be imported. This one is shaped like the
+// parent account's disabled HTTPPARSE checks, including the older notification
+// form with a string delay and a named schedule.
+func TestAccCheckResource_importReadsDisabledCheck(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	mock.AddCheck("DISABLED", map[string]interface{}{
+		"_id":      "DISABLED",
+		"type":     "HTTPPARSE",
+		"label":    "acc-disabled",
+		"enable":   "inactive",
+		"interval": 1,
+		"queue":    false,
+		"dep":      false,
+		"suspacct": false,
+		"notifications": []interface{}{
+			map[string]interface{}{"GROUP-1": map[string]interface{}{"delay": "0", "schedule": "All the time"}},
+		},
+		"parameters": map[string]interface{}{
+			"target":    "http://example.com:4070/",
+			"threshold": 5,
+			"sens":      2,
+			"fields": map[string]interface{}{
+				"A": map[string]interface{}{"name": "rest_api", "min": 1, "max": 1},
+			},
+		},
+	})
+
+	config := providerConfig(mock.URL()) + `
+resource "nodeping_check" "imported" {
+  type     = "HTTPPARSE"
+  target   = "http://example.com:4070/"
+  label    = "acc-disabled"
+  enabled  = false
+  interval = 1
+
+  fields = {
+    A = { name = "rest_api", min = 1, max = 1 }
+  }
+
+  notifications {
+    contact_id = "GROUP-1"
+    delay      = 0
+    schedule   = "All the time"
+  }
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config:          config,
+				ResourceName:    "nodeping_check.imported",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithID,
+				ImportStateId:   "DISABLED",
 			},
 		},
 	})

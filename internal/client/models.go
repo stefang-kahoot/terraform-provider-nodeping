@@ -102,7 +102,7 @@ type Check struct {
 	Dep           interface{}              `json:"dep,omitempty"`
 	Mute          interface{}              `json:"mute,omitempty"`
 	Description   string                   `json:"description,omitempty"`
-	Queue         string                   `json:"queue,omitempty"`
+	Queue         interface{}              `json:"queue,omitempty"` // a queue name, or false on a disabled check
 	UUID          string                   `json:"uuid,omitempty"`
 	RunLocations  interface{}              `json:"runlocations,omitempty"`
 	HomeLoc       interface{}              `json:"homeloc,omitempty"`

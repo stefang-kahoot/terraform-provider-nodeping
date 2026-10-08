@@ -42,6 +42,22 @@ resource "nodeping_check" "content" {
 }
 ```
 
+### HTTP Parse Check
+
+```hcl
+resource "nodeping_check" "stats" {
+  type    = "HTTPPARSE"
+  target  = "https://api.example.com/stats.json"
+  label   = "API Stats"
+  enabled = true
+
+  fields = {
+    A = { name = "status", min = 200, max = 200 }
+    B = { name = "queue.length", max = 1000 }
+  }
+}
+```
+
 ### DNS Check
 
 ```hcl
@@ -220,6 +236,21 @@ resource "nodeping_check" "service" {
 - `receiveheaders` - (Optional) Map of expected response headers.
 - `postdata` - (Optional) POST request body.
 - `ipv6` - (Optional) Use IPv6.
+
+### Parse Arguments
+
+- `fields` - (Optional) Values to parse out of the response, as a map keyed by
+  NodePing's key for each field. The key can be any string: NodePing only uses
+  it to tell fields apart, and its web interface makes up a random one. Import
+  keeps the keys a check already has, so a configuration has to use the same
+  ones. `HTTPPARSE`, `SNMP`, `MYSQL`, `PGSQL` and `MONGODB` checks. Each entry
+  takes:
+  - `name` - (Required) Name or path of the value, e.g. `status` or
+    `content.400.defaultOutput`.
+  - `min` - (Optional) Lowest acceptable value.
+  - `max` - (Optional) Highest acceptable value.
+  - `match` - (Optional) String the value has to match. `MYSQL`, `PGSQL` and
+    `MONGODB` only.
 
 ### DNS Arguments
 
