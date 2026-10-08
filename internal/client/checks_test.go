@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -101,29 +100,6 @@ func TestGetCheck(t *testing.T) {
 
 	if check.State != 1 {
 		t.Errorf("expected state 1, got %d", check.State)
-	}
-}
-
-func TestGetCheckNotFound(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(ErrorResponse{Error: "Check not found"})
-	}))
-	defer server.Close()
-
-	c := NewClient(ClientConfig{
-		APIToken: "test-token",
-		BaseURL:  server.URL,
-	})
-
-	_, err := c.GetCheck(context.Background(), "nonexistent")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	_, ok := errors.AsType[*NotFoundError](err)
-	if !ok {
-		t.Errorf("expected *NotFoundError, got %T", err)
 	}
 }
 

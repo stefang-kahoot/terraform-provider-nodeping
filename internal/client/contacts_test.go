@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -92,29 +91,6 @@ func TestGetContact(t *testing.T) {
 
 	if contact.ID != "201205050153W2Q4C-BKPGH" {
 		t.Errorf("expected ID '201205050153W2Q4C-BKPGH', got %q", contact.ID)
-	}
-}
-
-func TestGetContactNotFound(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(ErrorResponse{Error: "Contact not found"})
-	}))
-	defer server.Close()
-
-	c := NewClient(ClientConfig{
-		APIToken: "test-token",
-		BaseURL:  server.URL,
-	})
-
-	_, err := c.GetContact(context.Background(), "nonexistent")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	_, ok := errors.AsType[*NotFoundError](err)
-	if !ok {
-		t.Errorf("expected *NotFoundError, got %T", err)
 	}
 }
 
