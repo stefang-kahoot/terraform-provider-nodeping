@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/provider"
 	"github.com/stefang-kahoot/terraform-provider-nodeping/testutil"
@@ -828,6 +829,54 @@ resource "nodeping_check" "untagged" {
 			{
 				Config:   config,
 				PlanOnly: true,
+			},
+		},
+	})
+}
+
+// NodePing keeps a check's tags when an update leaves them out, so with no
+// default_tags the last tag could not be removed: the update omitted the empty
+// list, and every plan afterwards wanted to remove the tags again.
+func TestAccCheckResource_removesTheLastTag(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	config := func(tags string) string {
+		return providerConfig(mock.URL()) + fmt.Sprintf(`
+resource "nodeping_check" "tagged" {
+  type   = "HTTP"
+  target = "https://example.com"
+  %s
+}
+`, tags)
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config(`tags = ["website", "eu"]`),
+				Check:  resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.#", "2"),
+			},
+			{
+				Config: config(`tags = ["website"]`),
+				Check:  resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.#", "1"),
+			},
+			{
+				// The step's own empty plan after apply is the real test.
+				Config: config(``),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr("nodeping_check.tagged", "tags.#"),
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.#", "0"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources["nodeping_check.tagged"].Primary.ID
+						check, _ := mock.GetCheck(id)
+						if tags, _ := check["tags"].([]interface{}); len(tags) != 0 {
+							return fmt.Errorf("NodePing still has tags %v", tags)
+						}
+						return nil
+					},
+				),
 			},
 		},
 	})

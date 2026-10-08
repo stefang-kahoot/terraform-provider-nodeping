@@ -176,7 +176,7 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	updateReq := client.CheckUpdateRequest{CheckCreateRequest: createReq}
+	updateReq := client.CheckUpdateRequest{CheckCreateRequest: createReq, Tags: createReq.Tags}
 
 	check, err := r.client.UpdateCheck(ctx, state.ID.ValueString(), updateReq)
 	if err != nil {
@@ -476,9 +476,10 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 
 	// tags_all, not tags: it is what ModifyPlan merged with the provider's
 	// default_tags, and so what the check should actually carry. It is only
-	// unknown when tags itself is.
+	// unknown when tags itself is. Empty, it stays an empty list rather than
+	// nil, which an update sends to remove the check's last tag.
 	if !plan.TagsAll.IsNull() && !plan.TagsAll.IsUnknown() {
-		var tags []string
+		tags := []string{}
 		diags.Append(plan.TagsAll.ElementsAs(ctx, &tags, false)...)
 		req.Tags = tags
 	}
