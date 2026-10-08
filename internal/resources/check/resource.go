@@ -365,8 +365,10 @@ func (r *CheckResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanR
 	// with default_tags lands in tags_all instead.
 	//
 	// tags_all stays unknown while tags is, so an unknown tag list does not get
-	// silently flattened into the defaults alone.
-	if plan.Tags.IsUnknown() {
+	// silently flattened into the defaults alone -- and while any one tag is,
+	// such as a tag taken from another resource's attribute, which would not
+	// convert to a string.
+	if plan.Tags.IsUnknown() || hasUnknownElement(plan.Tags) {
 		plan.TagsAll = types.ListUnknown(types.StringType)
 		resp.Diagnostics.Append(resp.Plan.Set(ctx, &plan)...)
 		return
@@ -388,6 +390,17 @@ func (r *CheckResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanR
 
 	plan.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.Plan.Set(ctx, &plan)...)
+}
+
+// hasUnknownElement reports whether a list holds a value that is not known
+// until apply.
+func hasUnknownElement(list types.List) bool {
+	for _, element := range list.Elements() {
+		if element.IsUnknown() {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeTags returns the provider's default tags followed by the check's own,

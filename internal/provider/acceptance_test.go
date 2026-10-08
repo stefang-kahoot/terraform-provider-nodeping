@@ -882,6 +882,49 @@ resource "nodeping_check" "tagged" {
 	})
 }
 
+// A tag taken from another resource's attribute is unknown until that
+// resource is applied. ModifyPlan converted the tag list to strings to merge
+// it with default_tags, which failed the plan with "Value Conversion Error";
+// tags_all now stays unknown until the tag is known.
+func TestAccCheckResource_tagNotKnownUntilApply(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	config := fmt.Sprintf(`
+provider "nodeping" {
+  api_token    = "acc-test-token"
+  api_url      = %q
+  default_tags = ["managed-by-terraform"]
+}
+
+resource "terraform_data" "team" {
+  input = "owner-team-sre"
+}
+
+resource "nodeping_check" "tagged" {
+  type   = "HTTP"
+  target = "https://example.com"
+  tags   = ["website", terraform_data.team.output]
+}
+`, mock.URL())
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags.#", "2"),
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.#", "3"),
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.0", "managed-by-terraform"),
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.1", "website"),
+					resource.TestCheckResourceAttr("nodeping_check.tagged", "tags_all.2", "owner-team-sre"),
+				),
+			},
+		},
+	})
+}
+
 // Changing, adding and removing fields updates the check in place, and the
 // request carries the fields exactly as configured: the mock replaces the
 // stored parameters with each update, as NodePing does.
