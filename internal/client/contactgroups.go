@@ -42,7 +42,7 @@ func (c *Client) CreateContactGroup(ctx context.Context, req ContactGroupCreateR
 		body:   req,
 	}, &result)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create contact group: %w", err)
+		return nil, createError("contact group", req.Name, err)
 	}
 	return &result, nil
 }

@@ -42,7 +42,11 @@ func (c *Client) CreateCheck(ctx context.Context, req CheckCreateRequest) (*Chec
 		body:   req,
 	}, &result)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create check: %w", err)
+		name := req.Label
+		if name == "" {
+			name = req.Target
+		}
+		return nil, createError("check", name, err)
 	}
 	return &result, nil
 }

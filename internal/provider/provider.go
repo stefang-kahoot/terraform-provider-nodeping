@@ -138,7 +138,7 @@ The resulting check will have tags: ` + "`[\"managed-by-terraform\", \"team-devo
 				Optional:    true,
 			},
 			"max_retries": schema.Int64Attribute{
-				Description: "Maximum number of retries for failed requests. Defaults to 3.",
+				Description: "Maximum number of retries for a failed request: one answered 429 or with a server error, or whose connection failed. A request that creates something is retried only if it cannot have reached NodePing. Defaults to 3.",
 				Optional:    true,
 			},
 			"retry_wait_min": schema.Int64Attribute{
@@ -146,7 +146,7 @@ The resulting check will have tags: ` + "`[\"managed-by-terraform\", \"team-devo
 				Optional:    true,
 			},
 			"retry_wait_max": schema.Int64Attribute{
-				Description: "Maximum wait time in seconds between retries. Defaults to 30.",
+				Description: "Maximum wait time in seconds between retries, also for a 429 that asks for a longer wait in Retry-After. Defaults to 30.",
 				Optional:    true,
 			},
 			"default_tags": schema.ListAttribute{
