@@ -71,15 +71,23 @@ type ContactGroupUpdateRequest struct {
 }
 
 type ContactCreateRequest struct {
-	Name         string       `json:"name,omitempty"`
-	CustRole     string       `json:"custrole,omitempty"`
+	Name     string `json:"name,omitempty"`
+	CustRole string `json:"custrole,omitempty"`
+	// NewAddresses is left out when empty: NodePing then creates a contact
+	// with no address, but refuses an empty list.
 	NewAddresses []NewAddress `json:"newaddresses,omitempty"`
 }
 
 type ContactUpdateRequest struct {
-	Name         string                    `json:"name,omitempty"`
-	CustRole     string                    `json:"custrole,omitempty"`
-	Addresses    map[string]ContactAddress `json:"addresses,omitempty"`
+	Name     string `json:"name,omitempty"`
+	CustRole string `json:"custrole,omitempty"`
+	// Addresses, when sent, replaces the contact's addresses: NodePing keeps
+	// those it lists, under their IDs, and deletes the rest. A non-nil map is
+	// sent even when empty, as {}, which with NewAddresses replaces every
+	// address. A nil map leaves the key out, and the addresses as they are.
+	// omitzero, unlike omitempty, tells the two apart; it also keeps a nil
+	// map from going out as null, which NodePing happens to ignore as well.
+	Addresses    map[string]ContactAddress `json:"addresses,omitzero"`
 	NewAddresses []NewAddress              `json:"newaddresses,omitempty"`
 }
 

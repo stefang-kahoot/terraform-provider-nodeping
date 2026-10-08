@@ -205,7 +205,14 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 		}
 	}
 
-	updateReq.Addresses = make(map[string]client.ContactAddress)
+	// Send `addresses` whenever the plan has an address, even if it keeps none
+	// of the old ones: without the key NodePing keeps them all next to the new
+	// ones. With no address, send neither key. The contact has none to remove
+	// (ModifyPlan refuses to remove the last one), and NodePing refuses an
+	// empty collection that would leave a contact without an address.
+	if len(plan.Addresses) > 0 {
+		updateReq.Addresses = make(map[string]client.ContactAddress)
+	}
 	for _, addr := range plan.Addresses {
 		if !addr.ID.IsNull() && !addr.ID.IsUnknown() && existingAddressIDs[addr.ID.ValueString()] {
 			addrUpdate := client.ContactAddress{
@@ -319,6 +326,7 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 
 // ModifyPlan plans the ID of every address on an update; see
 // plannedAddressIDs. A create has no IDs to carry over and a destroy no plan.
+// It also refuses an update that removes a contact's last address.
 func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
@@ -331,7 +339,8 @@ func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, addressPath, &priorList)...)
 	if resp.Diagnostics.HasError() || plannedList.IsUnknown() {
 		// A dynamic block over a collection not known yet: there is no block
-		// to plan an ID for until it is.
+		// to plan an ID for until it is. Terraform plans again during the
+		// apply, with the collection known.
 		return
 	}
 
@@ -339,6 +348,26 @@ func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	resp.Diagnostics.Append(plannedList.ElementsAs(ctx, &planned, false)...)
 	resp.Diagnostics.Append(priorList.ElementsAs(ctx, &prior, false)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// NodePing refuses any update that would leave a contact with no address,
+	// with the misleading "Account must have at least one 'owner' contact."
+	// A contact created without an address is fine and can stay that way.
+	if len(planned) == 0 && len(prior) > 0 {
+		var id, name types.String
+		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &id)...)
+		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("name"), &name)...)
+		contact := "ID " + id.ValueString()
+		if name.ValueString() != "" {
+			contact = fmt.Sprintf("%q (%s)", name.ValueString(), contact)
+		}
+		resp.Diagnostics.AddAttributeError(
+			addressPath,
+			"Cannot remove a contact's last address",
+			fmt.Sprintf("The configuration removes every address of contact %s, but NodePing cannot remove a contact's last address. "+
+				"Keep at least one address block, or delete the contact and create it again.", contact),
+		)
 		return
 	}
 
