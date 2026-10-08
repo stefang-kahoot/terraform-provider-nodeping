@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -20,6 +21,7 @@ var (
 	_ resource.Resource                = &ContactResource{}
 	_ resource.ResourceWithConfigure   = &ContactResource{}
 	_ resource.ResourceWithImportState = &ContactResource{}
+	_ resource.ResourceWithModifyPlan  = &ContactResource{}
 )
 
 type ContactResource struct {
@@ -315,6 +317,107 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
+// ModifyPlan plans the ID of every address on an update; see
+// plannedAddressIDs. A create has no IDs to carry over and a destroy no plan.
+func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+
+	addressPath := path.Root("address")
+
+	var plannedList, priorList types.List
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, addressPath, &plannedList)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, addressPath, &priorList)...)
+	if resp.Diagnostics.HasError() || plannedList.IsUnknown() {
+		// A dynamic block over a collection not known yet: there is no block
+		// to plan an ID for until it is.
+		return
+	}
+
+	var planned, prior []AddressModel
+	resp.Diagnostics.Append(plannedList.ElementsAs(ctx, &planned, false)...)
+	resp.Diagnostics.Append(priorList.ElementsAs(ctx, &prior, false)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	for i, id := range plannedAddressIDs(prior, planned) {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, addressPath.AtListIndex(i).AtName("id"), id)...)
+	}
+}
+
+// plannedAddressIDs decides, for each planned address block, which existing
+// address it is, and returns that address's ID -- or unknown for an address
+// NodePing has yet to create. Update sends a known ID under `addresses`, which
+// keeps or edits that address, and an unknown one under `newaddresses`; an
+// existing ID no block claims is left out, and NodePing deletes it.
+//
+// Terraform pairs list blocks with prior state by position, and so did
+// UseStateForUnknown on address.id. Position is not what identifies an
+// address: remove the first of two and the second inherited the first's ID,
+// so the update wrote it under that ID and NodePing deleted its own. Contact
+// groups and checks reference address IDs, so they were quietly repointed. A
+// block added at the end had no prior position at all, and its ID was planned
+// null rather than unknown, failing the apply.
+//
+// A block therefore takes, in this order:
+//
+//  1. the ID of the first unclaimed prior address with the same type and
+//     address, wherever it sat -- reordered blocks keep their IDs, and
+//     identical blocks claim identical addresses in order;
+//  2. failing that, the ID of the prior address at its own position, if no
+//     block claimed it and its type is the same -- an address edited in
+//     place, such as a rotated webhook URL, keeps its ID, as NodePing allows.
+//     A changed type is a new address instead: whether NodePing can change an
+//     address's type in place is untested;
+//  3. otherwise unknown.
+//
+// Every block is tried for 1 before any for 2, so a block that moved claims
+// its own ID before a neighbour edited in place can take it by position. An
+// address or type not known until apply (taken from another resource) cannot
+// match by value; with a known type it can still keep its position's ID.
+func plannedAddressIDs(prior, planned []AddressModel) []types.String {
+	ids := make([]types.String, len(planned))
+	for i := range ids {
+		ids[i] = types.StringUnknown()
+	}
+
+	claimed := make([]bool, len(prior))
+	claimable := func(j int) bool {
+		return !claimed[j] && isKnown(prior[j].ID) && prior[j].ID.ValueString() != ""
+	}
+
+	for i, block := range planned {
+		if !isKnown(block.Type) || !isKnown(block.Address) {
+			continue
+		}
+		for j, old := range prior {
+			if claimable(j) && old.Type.Equal(block.Type) && old.Address.Equal(block.Address) {
+				claimed[j] = true
+				ids[i] = old.ID
+				break
+			}
+		}
+	}
+
+	for i, block := range planned {
+		if !ids[i].IsUnknown() || i >= len(prior) || !claimable(i) || !isKnown(block.Type) {
+			continue
+		}
+		if prior[i].Type.Equal(block.Type) {
+			claimed[i] = true
+			ids[i] = prior[i].ID
+		}
+	}
+
+	return ids
+}
+
+func isKnown(s types.String) bool {
+	return !s.IsNull() && !s.IsUnknown()
+}
+
 func (r *ContactResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state ContactResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -408,12 +511,16 @@ func (r *ContactResource) ImportState(ctx context.Context, req resource.ImportSt
 // outcome -- each block binds to the wrong address.id, and the next update
 // PUTs one address's fields under another's ID and corrupts both.
 //
-// Addresses are therefore matched back to the planned blocks by
+// Addresses are therefore matched back to the planned blocks: first by ID,
+// where the block has one -- ModifyPlan planned it and Update sent the address
+// under it, or on a read it is the ID the prior state recorded -- then by
 // (type, address), the pair that identifies an address to someone reading the
-// configuration. The ID cannot serve: NodePing assigns it, so it is unknown
-// for a block being created. Whatever the plan does not account for follows
-// in ID order -- an address added outside Terraform, or every address when
-// there is no plan to match against, as on import.
+// configuration. A block being created has no ID until NodePing assigns one,
+// so it can only match by value; and two identical addresses can only be told
+// apart by ID, so matching those by value could swap them. Whatever the plan
+// does not account for follows in ID order -- an address added outside
+// Terraform, or every address when there is no plan to match against, as on
+// import.
 func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.ContactAddress, planAddresses []AddressModel, diags *diag.Diagnostics) []AddressModel {
 	if len(apiAddresses) == 0 {
 		return nil
@@ -434,14 +541,33 @@ func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.Con
 		byKey[key] = append(byKey[key], id)
 	}
 
-	// Give every planned block the address it names, where the API still has
-	// one. A block left empty here is one whose address changed outside
-	// Terraform.
+	// A block planned with an ID is the address NodePing holds under it.
 	matched := make([]string, len(planAddresses))
 	claimed := make(map[string]bool, len(ids))
 	for i, planned := range planAddresses {
+		if !isKnown(planned.ID) {
+			continue
+		}
+		if id := planned.ID.ValueString(); !claimed[id] {
+			if _, ok := apiAddresses[id]; ok {
+				claimed[id] = true
+				matched[i] = id
+			}
+		}
+	}
+
+	// Give every other planned block the address it names, where the API
+	// still has one. A block left empty here is one whose address changed
+	// outside Terraform.
+	for i, planned := range planAddresses {
+		if matched[i] != "" {
+			continue
+		}
 		key := addressKey(planned.Type.ValueString(), planned.Address.ValueString())
 		queue := byKey[key]
+		for len(queue) > 0 && claimed[queue[0]] {
+			queue = queue[1:]
+		}
 		if len(queue) == 0 {
 			continue
 		}
