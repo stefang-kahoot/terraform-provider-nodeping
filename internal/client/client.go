@@ -39,6 +39,7 @@ type Client struct {
 	retryMaxWait time.Duration
 	userAgent    string
 	defaultTags  []string
+	ignoreMute   bool
 }
 
 type ClientConfig struct {
@@ -52,6 +53,9 @@ type ClientConfig struct {
 	Timeout      time.Duration
 	UserAgent    string
 	DefaultTags  []string
+	// IgnoreMute leaves the mute of a check whose configuration does not set
+	// one to NodePing. See the provider's ignore_mute.
+	IgnoreMute bool
 }
 
 func NewClient(cfg ClientConfig) *Client {
@@ -90,6 +94,7 @@ func NewClient(cfg ClientConfig) *Client {
 		retryMaxWait: cfg.RetryMaxWait,
 		userAgent:    cfg.UserAgent,
 		defaultTags:  cfg.DefaultTags,
+		ignoreMute:   cfg.IgnoreMute,
 	}
 }
 
@@ -105,11 +110,17 @@ func (c *Client) WithCustomerID(customerID string) *Client {
 		retryMaxWait: c.retryMaxWait,
 		userAgent:    c.userAgent,
 		defaultTags:  c.defaultTags,
+		ignoreMute:   c.ignoreMute,
 	}
 }
 
 func (c *Client) GetDefaultTags() []string {
 	return c.defaultTags
+}
+
+// IgnoreMute reports whether the provider's ignore_mute is set.
+func (c *Client) IgnoreMute() bool {
+	return c.ignoreMute
 }
 
 type requestOptions struct {

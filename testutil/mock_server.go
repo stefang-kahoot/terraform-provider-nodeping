@@ -14,6 +14,8 @@ type MockNodePingServer struct {
 	contacts      map[string]map[string]interface{}
 	checks        map[string]map[string]interface{}
 	contactgroups map[string]map[string]interface{}
+	// checkUpdates holds every update request body per check, as sent.
+	checkUpdates map[string][]map[string]interface{}
 }
 
 func NewMockNodePingServer() *MockNodePingServer {
@@ -21,6 +23,7 @@ func NewMockNodePingServer() *MockNodePingServer {
 		contacts:      make(map[string]map[string]interface{}),
 		checks:        make(map[string]map[string]interface{}),
 		contactgroups: make(map[string]map[string]interface{}),
+		checkUpdates:  make(map[string][]map[string]interface{}),
 	}
 
 	mux := http.NewServeMux()
@@ -253,6 +256,12 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
+		sent := make(map[string]interface{}, len(req))
+		for k, v := range req {
+			sent[k] = v
+		}
+		m.checkUpdates[id] = append(m.checkUpdates[id], sent)
+
 		// NodePing ignores "tags": null on an update and keeps the check's
 		// tags; only an empty list clears them.
 		if v, ok := req["tags"]; ok && v == nil {
@@ -463,4 +472,31 @@ func (m *MockNodePingServer) GetCheck(id string) (map[string]interface{}, bool) 
 	defer m.mu.RUnlock()
 	c, ok := m.checks[id]
 	return c, ok
+}
+
+// SetCheckMute mutes or unmutes a check the way the NodePing web interface
+// does, behind Terraform's back. The web interface's "mute until" stores a
+// number, the time in epoch milliseconds, rather than true.
+func (m *MockNodePingServer) SetCheckMute(id string, mute interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if check, ok := m.checks[id]; ok {
+		check["mute"] = mute
+	}
+}
+
+// CheckMute returns the mute a check holds, and whether it holds one.
+func (m *MockNodePingServer) CheckMute(id string) (interface{}, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	mute, ok := m.checks[id]["mute"]
+	return mute, ok
+}
+
+// CheckUpdates returns the body of every update request sent for a check, in
+// order.
+func (m *MockNodePingServer) CheckUpdates(id string) []map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]map[string]interface{}(nil), m.checkUpdates[id]...)
 }
