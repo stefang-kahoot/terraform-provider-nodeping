@@ -14,26 +14,9 @@ A Terraform provider for managing [NodePing](https://nodeping.com/) monitoring r
 This is a fork of [phizzl/terraform-provider-nodeping](https://github.com/phizzl/terraform-provider-nodeping),
 published as [`stefang-kahoot/nodeping`](https://registry.terraform.io/providers/stefang-kahoot/nodeping/latest).
 It carries fixes found while bringing an existing NodePing estate under
-Terraform and merges upstream's changes as they land. The fixes go upstream as
-pull requests too; those already open are linked below. This fork numbers its
-own releases: 0.4.0 is upstream 0.3.2 plus the first three fixes below, and
-0.4.1 adds the rest. Over upstream it:
-
-- merges `default_tags` into a computed `tags_all` instead of into `tags`, so a
-  check with tags of its own can be planned
-  ([phizzl#7](https://github.com/phizzl/terraform-provider-nodeping/pull/7));
-- reads a `warningdays` of `0`, which the NodePing web interface saves for an
-  empty field, as unset
-  ([phizzl#8](https://github.com/phizzl/terraform-provider-nodeping/pull/8));
-- reads back the ten check attributes upstream leaves unmapped on import and
-  refresh -- `postdata`, `homeloc` and MYSQL, SMTP, DNS and SNMP parameters --
-  and keeps a planned value when the API leaves it out;
-- reads the short form older checks store a notification in,
-  `{"<contact>": "All"}`, as that schedule with no delay instead of dropping
-  it, so such a check no longer reads as notifying nobody;
-- reads a `sendheaders` or `receiveheaders` entry NodePing stores as `null`,
-  such as `{"Host": null}`, as no header rather than an empty one, so a check
-  whose only header is null reads with no `sendheaders` at all.
+Terraform, mostly to how import and refresh read back what NodePing stores.
+See the [releases](https://github.com/stefang-kahoot/terraform-provider-nodeping/releases)
+for what changed.
 
 ## Features
 
