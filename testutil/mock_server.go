@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -438,11 +439,23 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 var idCounter int
 var idMu sync.Mutex
 
+// generateID hands out mock resource and address IDs.
+//
+// They have to sort in the order they were issued. The contact resource falls
+// back to ID order for any address it cannot match against a plan, which is
+// every address when there is no plan at all -- an import. An ID scheme whose
+// lexical order diverged from its issue order therefore decided whether a
+// multi-address import test passed, and idCounter is a package-level global
+// shared by every test in the binary, so the answer moved whenever a test was
+// added or removed.
+//
+// The previous scheme ('A'+n%26, 'A'+n/26%26, '0'+n%10) wrapped every 26 IDs
+// and did exactly that: ...YA4, ZA5, AB6... sorts as AB6, YA4, ZA5.
 func generateID() string {
 	idMu.Lock()
 	defer idMu.Unlock()
 	idCounter++
-	return string(rune('A'+idCounter%26)) + string(rune('A'+(idCounter/26)%26)) + string(rune('0'+idCounter%10))
+	return fmt.Sprintf("%06d", idCounter)
 }
 
 func (m *MockNodePingServer) AddContact(id string, contact map[string]interface{}) {

@@ -434,9 +434,12 @@ func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.Con
 		byKey[key] = append(byKey[key], id)
 	}
 
-	ordered := make([]string, 0, len(ids))
+	// Give every planned block the address it names, where the API still has
+	// one. A block left empty here is one whose address changed outside
+	// Terraform.
+	matched := make([]string, len(planAddresses))
 	claimed := make(map[string]bool, len(ids))
-	for _, planned := range planAddresses {
+	for i, planned := range planAddresses {
 		key := addressKey(planned.Type.ValueString(), planned.Address.ValueString())
 		queue := byKey[key]
 		if len(queue) == 0 {
@@ -444,13 +447,35 @@ func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.Con
 		}
 		byKey[key] = queue[1:]
 		claimed[queue[0]] = true
-		ordered = append(ordered, queue[0])
+		matched[i] = queue[0]
 	}
+
+	leftover := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if !claimed[id] {
-			ordered = append(ordered, id)
+			leftover = append(leftover, id)
 		}
 	}
+
+	// An unmatched block still owns its position, so fill it from the
+	// leftovers rather than appending them all at the end. Appending shifts
+	// every later block up one: the renamed address lands on the following
+	// block, and the next update then writes each block's address under its
+	// neighbour's ID. Contact groups reference address IDs, so that quietly
+	// repoints any group that named one of them.
+	ordered := make([]string, 0, len(ids))
+	next := 0
+	for _, id := range matched {
+		if id == "" {
+			if next < len(leftover) {
+				ordered = append(ordered, leftover[next])
+				next++
+			}
+			continue
+		}
+		ordered = append(ordered, id)
+	}
+	ordered = append(ordered, leftover[next:]...)
 
 	result := make([]AddressModel, 0, len(ordered))
 	for _, id := range ordered {
