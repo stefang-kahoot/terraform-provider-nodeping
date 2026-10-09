@@ -74,7 +74,7 @@ func TestMapCheckToModelKeepsPlannedValuesTheAPIOmits(t *testing.T) {
 	var diags diag.Diagnostics
 
 	got := planned()
-	r.mapCheckToModel(context.Background(), bare, got, &diags)
+	r.mapCheckToModel(context.Background(), bare, got, thePlan, &diags)
 
 	if diags.HasError() {
 		t.Fatalf("mapping raised %v", diags.Errors())
@@ -136,7 +136,7 @@ func TestMapCheckToModelPrefersTheAPIOverState(t *testing.T) {
 
 	r := &CheckResource{}
 	var diags diag.Diagnostics
-	r.mapCheckToModel(context.Background(), drifted, state, &diags)
+	r.mapCheckToModel(context.Background(), drifted, state, thePriorState, &diags)
 
 	if got, want := state.Database.ValueString(), "changed-in-the-ui"; got != want {
 		t.Errorf("database = %q, want %q", got, want)
@@ -169,7 +169,7 @@ func TestMapCheckToModelFillsAnEmptyModelOnImport(t *testing.T) {
 	var model CheckResourceModel
 	r := &CheckResource{}
 	var diags diag.Diagnostics
-	r.mapCheckToModel(context.Background(), imported, &model, &diags)
+	r.mapCheckToModel(context.Background(), imported, &model, nothing, &diags)
 
 	if diags.HasError() {
 		t.Fatalf("mapping raised %v", diags.Errors())
@@ -209,7 +209,7 @@ func TestMapCheckToModelLeavesTagsToTheConfiguration(t *testing.T) {
 		ID:   "MOCK-1",
 		Type: "HTTP",
 		Tags: []string{"managed-by-terraform", "own"},
-	}, &model, &diags)
+	}, &model, thePriorState, &diags)
 	if diags.HasError() {
 		t.Fatalf("mapping raised %v", diags.Errors())
 	}
@@ -278,7 +278,7 @@ func TestMapCheckToModelWarningDays(t *testing.T) {
 			check := &client.Check{Parameters: client.CheckParameters{WarningDays: tt.input}}
 			var model CheckResourceModel
 			var diags diag.Diagnostics
-			r.mapCheckToModel(context.Background(), check, &model, &diags)
+			r.mapCheckToModel(context.Background(), check, &model, nothing, &diags)
 			if diags.HasError() {
 				t.Fatalf("mapCheckToModel: %v", diags)
 			}
@@ -428,7 +428,7 @@ func TestMapCheckToModelReadsFieldsTheConfigurationLacks(t *testing.T) {
 	model := CheckResourceModel{Fields: types.MapNull(checkattr.FieldType)}
 	r := &CheckResource{}
 	var diags diag.Diagnostics
-	r.mapCheckToModel(context.Background(), check, &model, &diags)
+	r.mapCheckToModel(context.Background(), check, &model, thePriorState, &diags)
 
 	if diags.HasError() {
 		t.Fatalf("mapping raised %v", diags.Errors())

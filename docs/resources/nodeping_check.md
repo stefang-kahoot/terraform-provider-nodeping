@@ -252,6 +252,12 @@ resource "nodeping_check" "service" {
   - `match` - (Optional) String the value has to match. `MYSQL`, `PGSQL` and
     `MONGODB` only.
 
+  Changing a field's values or adding a field updates the check in place.
+  Removing a field, or a field's `min`, `max` or `match`, replaces the check:
+  NodePing cannot remove them from an existing check (an update keeps them),
+  so Terraform deletes it and creates a new one with a new ID, and the plan
+  says so in a warning. Put them back in the configuration to keep the check.
+
 ### DNS Arguments
 
 - `dnstype` - (Optional) DNS query type: `ANY`, `A`, `AAAA`, `CNAME`, `MX`, `NS`, `PTR`, `SOA`, `SRV`, `TXT`.
@@ -293,6 +299,40 @@ resource "nodeping_check" "service" {
 
 - `verifyvolume` - (Optional) Enable the volume detection feature. `AUDIO` checks only.
 - `volumemin` - (Optional) Minimum acceptable volume threshold in dB, used by the volume detection feature. Range: `-90` to `0`. `AUDIO` checks only.
+
+## Removing an Argument
+
+NodePing keeps whatever an update leaves out, so removing an argument from the
+configuration has to clear it in NodePing explicitly. The provider sends the
+value NodePing stores as cleared, and only for a value the check has:
+
+- `contentstring`, `method`, `postdata`, `servername`, `statuscode` and
+  `warningdays` are cleared to an empty value.
+- `regex`, `invert`, `follow` and `ipv6` are set to `false`. Once set, NodePing
+  keeps these as `false` rather than dropping them. A refresh reads a stored
+  `false` as unset when the configuration leaves the argument out. An import
+  has no configuration to go by and reads it as `false`, so a configuration
+  that imports such a check without a plan says `follow = false`.
+- `dep` is removed.
+- `runlocations` is emptied.
+- `sendheaders` and `receiveheaders` lose each header removed from the map.
+  NodePing merges these per header, so the provider names each removed one.
+- `notifications`: an update always sends the whole list, which NodePing
+  replaces, so removing the last block removes the last notification.
+- `description`: NodePing ignores an empty description, so nothing clears
+  one; it can only be overwritten. The provider overwrites it with a single
+  space, which the resource, the data sources and an import all read as no
+  description.
+- `public` switches public reports off when set to `false` or left out. An
+  update sends it as the string `"false"`: NodePing ignores the boolean.
+- `fields`: a field, or a field's `min`, `max` or `match`, cannot be removed
+  from an existing check. Removing one replaces the check; see
+  [Parse Arguments](#parse-arguments).
+
+Removing any other argument (`homeloc`, `port`, `username`, `secure`,
+`verify`, the `dns*`, `snmp*` and database arguments, ...) has not been tried
+against NodePing and is not cleared: NodePing keeps the value, and the apply
+fails with "Provider produced inconsistent result after apply".
 
 ## Attribute Reference
 

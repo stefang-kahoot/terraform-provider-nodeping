@@ -670,3 +670,29 @@ func TestFromAPIReadsNoFieldsAsNull(t *testing.T) {
 		t.Errorf("Fields element type = %v, want %v", m.Fields.ElementType(context.Background()), FieldType)
 	}
 }
+
+// The resource clears a description by writing a single space, since
+// NodePing ignores an empty one; that reads back as no description.
+func TestOptionalDescription(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in   string
+		want types.String
+	}{
+		{"", types.StringNull()},
+		{ClearedDescription, types.StringNull()},
+		{"  ", types.StringValue("  ")},
+		{"Who to call", types.StringValue("Who to call")},
+	}
+	for _, tt := range tests {
+		if got := OptionalDescription(tt.in); !got.Equal(tt.want) {
+			t.Errorf("OptionalDescription(%q) = %s, want %s", tt.in, got, tt.want)
+		}
+	}
+
+	m := FromAPI(context.Background(), &client.Check{ID: "MOCK-1", Description: ClearedDescription}, new(diag.Diagnostics))
+	if !m.Description.IsNull() {
+		t.Errorf("a cleared description reads as %s, want null", m.Description)
+	}
+}

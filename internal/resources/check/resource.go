@@ -90,7 +90,7 @@ func (r *CheckResource) Create(ctx context.Context, req resource.CreateRequest, 
 	plannedTagsAll := plan.TagsAll
 	plannedPassword := plan.Password
 
-	r.mapCheckToModel(ctx, check, &plan, &resp.Diagnostics)
+	r.mapCheckToModel(ctx, check, &plan, thePlan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -146,7 +146,7 @@ func (r *CheckResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	originalTarget := state.Target
 	statePassword := state.Password
 
-	r.mapCheckToModel(ctx, check, &state, &resp.Diagnostics)
+	r.mapCheckToModel(ctx, check, &state, thePriorState, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -174,7 +174,7 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		"id": state.ID.ValueString(),
 	})
 
-	createReq := r.buildCreateRequest(ctx, &plan, &resp.Diagnostics)
+	updateReq := r.buildUpdateRequest(ctx, &plan, &state, &resp.Diagnostics)
 	ignoreMute := r.muteIgnored(ctx, req.Config, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
@@ -183,10 +183,8 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// Left out, NodePing keeps the check's mute as it is, including a mute set
 	// after the plan was made.
 	if ignoreMute {
-		createReq.Mute = nil
+		updateReq.Mute = nil
 	}
-
-	updateReq := client.CheckUpdateRequest{CheckCreateRequest: createReq, Tags: createReq.Tags}
 
 	check, err := r.client.UpdateCheck(ctx, state.ID.ValueString(), updateReq)
 	if err != nil {
@@ -207,7 +205,7 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	plannedPassword := plan.Password
 	plannedMute := plan.Mute
 
-	r.mapCheckToModel(ctx, check, &plan, &resp.Diagnostics)
+	r.mapCheckToModel(ctx, check, &plan, thePlan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -321,7 +319,7 @@ func (r *CheckResource) ImportState(ctx context.Context, req resource.ImportStat
 	}
 
 	var state CheckResourceModel
-	r.mapCheckToModel(ctx, check, &state, &resp.Diagnostics)
+	r.mapCheckToModel(ctx, check, &state, nothing, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -608,9 +606,7 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 		req.Tags = tags
 	}
 
-	if !plan.ContentString.IsNull() {
-		req.ContentString = plan.ContentString.ValueString()
-	}
+	req.ContentString = nonEmpty(plan.ContentString)
 
 	if !plan.Regex.IsNull() {
 		req.Regex = plan.Regex.ValueBool()
@@ -624,29 +620,16 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 		req.Follow = plan.Follow.ValueBool()
 	}
 
-	if !plan.Method.IsNull() {
-		req.Method = plan.Method.ValueString()
-	}
+	req.Method = nonEmpty(plan.Method)
 
 	if !plan.StatusCode.IsNull() {
 		req.StatusCode = int(plan.StatusCode.ValueInt64())
 	}
 
-	if !plan.SendHeaders.IsNull() {
-		headers := make(map[string]string)
-		diags.Append(plan.SendHeaders.ElementsAs(ctx, &headers, false)...)
-		req.SendHeaders = headers
-	}
+	req.SendHeaders = headersToAPI(ctx, plan.SendHeaders, diags)
+	req.ReceiveHeaders = headersToAPI(ctx, plan.ReceiveHeaders, diags)
 
-	if !plan.ReceiveHeaders.IsNull() {
-		headers := make(map[string]string)
-		diags.Append(plan.ReceiveHeaders.ElementsAs(ctx, &headers, false)...)
-		req.ReceiveHeaders = headers
-	}
-
-	if !plan.PostData.IsNull() {
-		req.PostData = plan.PostData.ValueString()
-	}
+	req.PostData = nonEmpty(plan.PostData)
 
 	if !plan.Fields.IsNull() && !plan.Fields.IsUnknown() {
 		var fields map[string]checkattr.FieldModel
@@ -702,9 +685,7 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 		req.WarningDays = int(plan.WarningDays.ValueInt64())
 	}
 
-	if !plan.ServerName.IsNull() {
-		req.ServerName = plan.ServerName.ValueString()
-	}
+	req.ServerName = nonEmpty(plan.ServerName)
 
 	if !plan.Email.IsNull() {
 		req.Email = plan.Email.ValueString()
@@ -772,8 +753,9 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 // back null and produces no plan.
 //
 // What remains below is only what a resource needs and a data source does
-// not: a plan to stay consistent with, and credentials the API does not echo.
-func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check, model *CheckResourceModel, diags *diag.Diagnostics) {
+// not: a plan or prior state to stay consistent with, and credentials the API
+// does not echo. holds says which of the two the model carries; see keep.
+func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check, model *CheckResourceModel, holds modelHolds, diags *diag.Diagnostics) {
 	a := checkattr.FromAPI(ctx, check, diags)
 
 	// The envelope. The API always answers with these, so there is never a
@@ -791,53 +773,53 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 
 	// Everything else resolves through keep(). See its comment: the API's
 	// value wins whenever it has one, but its silence must not be allowed to
-	// overwrite a planned value with null.
-	model.Target = keep(model.Target, a.Target)
-	model.Label = keep(model.Label, a.Label)
-	model.Dep = keep(model.Dep, a.Dep)
-	model.Description = keep(model.Description, a.Description)
-	model.Interval = keep(model.Interval, a.Interval)
-	model.Threshold = keep(model.Threshold, a.Threshold)
-	model.Sens = keep(model.Sens, a.Sens)
-	model.RunLocations = keep(model.RunLocations, a.RunLocations)
-	model.HomeLoc = keep(model.HomeLoc, a.HomeLoc)
+	// overwrite a planned value with null, nor its empty value a null one.
+	model.Target = keep(holds, model.Target, a.Target)
+	model.Label = keep(holds, model.Label, a.Label)
+	model.Dep = keep(holds, model.Dep, a.Dep)
+	model.Description = keep(holds, model.Description, a.Description)
+	model.Interval = keep(holds, model.Interval, a.Interval)
+	model.Threshold = keep(holds, model.Threshold, a.Threshold)
+	model.Sens = keep(holds, model.Sens, a.Sens)
+	model.RunLocations = keep(holds, model.RunLocations, a.RunLocations)
+	model.HomeLoc = keep(holds, model.HomeLoc, a.HomeLoc)
 
-	model.ContentString = keep(model.ContentString, a.ContentString)
-	model.Regex = keep(model.Regex, a.Regex)
-	model.Invert = keep(model.Invert, a.Invert)
-	model.Follow = keep(model.Follow, a.Follow)
-	model.Method = keep(model.Method, a.Method)
-	model.StatusCode = keep(model.StatusCode, a.StatusCode)
-	model.SendHeaders = keep(model.SendHeaders, a.SendHeaders)
-	model.ReceiveHeaders = keep(model.ReceiveHeaders, a.ReceiveHeaders)
-	model.PostData = keep(model.PostData, a.PostData)
-	model.Fields = keep(model.Fields, a.Fields)
+	model.ContentString = keep(holds, model.ContentString, a.ContentString)
+	model.Regex = keep(holds, model.Regex, a.Regex)
+	model.Invert = keep(holds, model.Invert, a.Invert)
+	model.Follow = keep(holds, model.Follow, a.Follow)
+	model.Method = keep(holds, model.Method, a.Method)
+	model.StatusCode = keep(holds, model.StatusCode, a.StatusCode)
+	model.SendHeaders = keep(holds, model.SendHeaders, a.SendHeaders)
+	model.ReceiveHeaders = keep(holds, model.ReceiveHeaders, a.ReceiveHeaders)
+	model.PostData = keep(holds, model.PostData, a.PostData)
+	model.Fields = keep(holds, model.Fields, a.Fields)
 
-	model.Port = keep(model.Port, a.Port)
-	model.Username = keep(model.Username, a.Username)
-	model.Secure = keep(model.Secure, a.Secure)
-	model.Verify = keep(model.Verify, a.Verify)
-	model.IPv6 = keep(model.IPv6, a.IPv6)
-	model.ServerName = keep(model.ServerName, a.ServerName)
-	model.Transport = keep(model.Transport, a.Transport)
+	model.Port = keep(holds, model.Port, a.Port)
+	model.Username = keep(holds, model.Username, a.Username)
+	model.Secure = keep(holds, model.Secure, a.Secure)
+	model.Verify = keep(holds, model.Verify, a.Verify)
+	model.IPv6 = keep(holds, model.IPv6, a.IPv6)
+	model.ServerName = keep(holds, model.ServerName, a.ServerName)
+	model.Transport = keep(holds, model.Transport, a.Transport)
 
-	model.DNSType = keep(model.DNSType, a.DNSType)
-	model.DNSToResolve = keep(model.DNSToResolve, a.DNSToResolve)
-	model.DNSSection = keep(model.DNSSection, a.DNSSection)
-	model.DNSRD = keep(model.DNSRD, a.DNSRD)
+	model.DNSType = keep(holds, model.DNSType, a.DNSType)
+	model.DNSToResolve = keep(holds, model.DNSToResolve, a.DNSToResolve)
+	model.DNSSection = keep(holds, model.DNSSection, a.DNSSection)
+	model.DNSRD = keep(holds, model.DNSRD, a.DNSRD)
 
-	model.WarningDays = keep(model.WarningDays, a.WarningDays)
-	model.ClientCert = keep(model.ClientCert, a.ClientCert)
+	model.WarningDays = keep(holds, model.WarningDays, a.WarningDays)
+	model.ClientCert = keep(holds, model.ClientCert, a.ClientCert)
 
-	model.Email = keep(model.Email, a.Email)
-	model.Database = keep(model.Database, a.Database)
-	model.Query = keep(model.Query, a.Query)
-	model.Namespace = keep(model.Namespace, a.Namespace)
-	model.SSHKey = keep(model.SSHKey, a.SSHKey)
-	model.SNMPv = keep(model.SNMPv, a.SNMPv)
+	model.Email = keep(holds, model.Email, a.Email)
+	model.Database = keep(holds, model.Database, a.Database)
+	model.Query = keep(holds, model.Query, a.Query)
+	model.Namespace = keep(holds, model.Namespace, a.Namespace)
+	model.SSHKey = keep(holds, model.SSHKey, a.SSHKey)
+	model.SNMPv = keep(holds, model.SNMPv, a.SNMPv)
 
-	model.VerifyVolume = keep(model.VerifyVolume, a.VerifyVolume)
-	model.VolumeMin = keep(model.VolumeMin, a.VolumeMin)
+	model.VerifyVolume = keep(holds, model.VerifyVolume, a.VerifyVolume)
+	model.VolumeMin = keep(holds, model.VolumeMin, a.VolumeMin)
 
 	// Not keep(): notifications is a block, and a check that genuinely
 	// notifies nobody has to come back empty rather than retaining whatever
@@ -873,8 +855,25 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 	// password.
 }
 
+// modelHolds is what the model handed to mapCheckToModel holds beforehand.
+type modelHolds int
+
+const (
+	// thePlan: Create and Update map NodePing's answer onto the plan, which
+	// the applied value has to equal.
+	thePlan modelHolds = iota
+	// thePriorState: Read maps the check onto the state of the last refresh
+	// or apply.
+	thePriorState
+	// nothing: ImportState maps the check onto an empty model. There is no
+	// configuration to agree with, so every attribute reads as NodePing
+	// stores it -- a false as false, which is why a configuration that
+	// imports clean says follow = false where NodePing holds one.
+	nothing
+)
+
 // keep resolves one attribute: the API's value when it has one, whatever the
-// caller already held when it does not.
+// caller already held when it does not, and the caller's when both are empty.
 //
 // Most check attributes are Optional and not Computed, so Terraform requires
 // the value an apply produces to equal the value it planned, exactly.
@@ -889,18 +888,30 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 // contradict. This is that guard, generalised to every attribute rather than
 // the seven someone happened to hit.
 //
+// The reverse holds too. A value removed from the configuration is cleared in
+// NodePing by sending its empty value (see clearRemoved), and NodePing then
+// holds that: false for regex, invert, follow and ipv6, which never go away
+// once set. To NodePing the empty value and no value are the same, so where
+// the caller holds null or empty and NodePing holds empty, the caller's value
+// stands. Otherwise every removed boolean would read back false against a
+// planned null. An import has nothing to hold and reads NodePing's values as
+// they are; see nothing.
+//
 // Drift is still reported whenever the API has an opinion -- a value it
 // returns always beats the one in state. What is given up is noticing that a
 // parameter disappeared at NodePing altogether, which is the same trade the
 // hand-written guards already made.
 //
 // An unknown value is never kept: it has to be resolved to something concrete
-// before the apply ends, so the API's null is the right answer there.
-func keep[T interface {
-	IsNull() bool
-	IsUnknown() bool
-}](current, fromAPI T) T {
-	if fromAPI.IsNull() && !current.IsNull() && !current.IsUnknown() {
+// before the apply ends, so the API's value is the right answer there.
+func keep[T attr.Value](holds modelHolds, current, fromAPI T) T {
+	if holds == nothing || current.IsUnknown() {
+		return fromAPI
+	}
+	if isEmpty(current) && isEmpty(fromAPI) {
+		return current
+	}
+	if fromAPI.IsNull() && !current.IsNull() {
 		return current
 	}
 	return fromAPI

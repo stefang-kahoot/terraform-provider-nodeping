@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/provider"
@@ -1016,9 +1017,9 @@ resource "nodeping_check" "tagged" {
 	})
 }
 
-// Changing, adding and removing fields updates the check in place, and the
-// request carries the fields exactly as configured: the mock replaces the
-// stored parameters with each update, as NodePing does.
+// Changing a field and adding one updates the check in place, and the
+// request carries the fields exactly as configured. Removing a field cannot:
+// NodePing merges fields and keeps every key (finding 31).
 func TestAccCheckResource_fields(t *testing.T) {
 	mock := testutil.NewMockNodePingServer()
 	t.Cleanup(mock.Close)
@@ -1056,20 +1057,20 @@ resource "nodeping_check" "test" {
 				Config: config(`
   fields = {
     A = { name = "status", min = 200, max = 299 }
+    B = { name = "load.avg", max = 2.5 }
     C = { name = "queue.length", min = 0 }
   }
 `),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("nodeping_check.test", plancheck.ResourceActionUpdate),
+					},
+				},
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("nodeping_check.test", "fields.%", "2"),
+					resource.TestCheckResourceAttr("nodeping_check.test", "fields.%", "3"),
 					resource.TestCheckResourceAttr("nodeping_check.test", "fields.A.max", "299"),
-					resource.TestCheckNoResourceAttr("nodeping_check.test", "fields.B.name"),
+					resource.TestCheckResourceAttr("nodeping_check.test", "fields.B.max", "2.5"),
 					resource.TestCheckResourceAttr("nodeping_check.test", "fields.C.min", "0"),
-				),
-			},
-			{
-				Config: config(""),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckNoResourceAttr("nodeping_check.test", "fields.%"),
 				),
 			},
 		},
