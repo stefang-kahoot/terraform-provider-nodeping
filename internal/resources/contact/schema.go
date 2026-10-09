@@ -200,7 +200,7 @@ terraform import nodeping_contact.example 201205050153W2Q4C:201205050153W2Q4C-BK
 							Default:     booldefault.StaticBool(false),
 						},
 						"mute": schema.BoolAttribute{
-							Description: "Mute all notifications to this address.",
+							Description: "Mute all notifications to this address. With the provider's ignore_mute set and mute left out, the address's mute is left to NodePing.",
 							Optional:    true,
 							Computed:    true,
 							Default:     booldefault.StaticBool(false),

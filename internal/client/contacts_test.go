@@ -220,7 +220,7 @@ func sentFields(t *testing.T, req any) map[string]json.RawMessage {
 func TestContactUpdateRequestAddresses(t *testing.T) {
 	t.Parallel()
 
-	email := NewAddress{Type: "email", Address: "x@example.com"}
+	email := AddressRequest{Type: "email", Address: "x@example.com"}
 	tests := []struct {
 		name          string
 		req           ContactUpdateRequest
@@ -228,9 +228,9 @@ func TestContactUpdateRequestAddresses(t *testing.T) {
 		wantNew       bool
 	}{
 		{"nil leaves addresses out", ContactUpdateRequest{Name: "n"}, "", false},
-		{"an empty map replaces every address", ContactUpdateRequest{Addresses: map[string]ContactAddress{}, NewAddresses: []NewAddress{email}}, `{}`, true},
-		{"kept addresses go by ID", ContactUpdateRequest{Addresses: map[string]ContactAddress{"A1": {Type: "email", Address: "a@example.com"}}}, `{"A1":{"address":"a@example.com","type":"email"}}`, false},
-		{"no new addresses leaves newaddresses out", ContactUpdateRequest{Addresses: map[string]ContactAddress{}, NewAddresses: []NewAddress{}}, `{}`, false},
+		{"an empty map replaces every address", ContactUpdateRequest{Addresses: map[string]AddressRequest{}, NewAddresses: []AddressRequest{email}}, `{}`, true},
+		{"kept addresses go by ID", ContactUpdateRequest{Addresses: map[string]AddressRequest{"A1": {Type: "email", Address: "a@example.com"}}}, `{"A1":{"address":"a@example.com","type":"email"}}`, false},
+		{"no new addresses leaves newaddresses out", ContactUpdateRequest{Addresses: map[string]AddressRequest{}, NewAddresses: []AddressRequest{}}, `{}`, false},
 	}
 
 	for _, tt := range tests {
@@ -255,7 +255,7 @@ func TestContactCreateRequestLeavesOutNoNewAddresses(t *testing.T) {
 
 	for _, req := range []ContactCreateRequest{
 		{Name: "n"},
-		{Name: "n", NewAddresses: []NewAddress{}},
+		{Name: "n", NewAddresses: []AddressRequest{}},
 	} {
 		if got, sent := sentFields(t, req)["newaddresses"]; sent {
 			t.Errorf("a create with no addresses sent newaddresses %s", got)

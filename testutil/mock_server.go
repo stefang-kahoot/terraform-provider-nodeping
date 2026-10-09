@@ -199,7 +199,8 @@ const noAddressesError = `{"error":"Account must have at least one 'owner' conta
 // entry is assigned one. An absent `addresses` key leaves what is already
 // stored alone -- which is exactly what makes omitting it a bug rather than a
 // no-op when every address has in fact been replaced. So does `null` or "",
-// which NodePing ignores.
+// which NodePing ignores. Each address kept under its ID is merged into the
+// stored one field by field; see mergedAddress.
 //
 // No update can remove a contact's last address: an empty `addresses` ({} or
 // []) or `newaddresses` that would leave none is refused with
@@ -217,7 +218,7 @@ func updatedAddresses(contact, req map[string]interface{}) (map[string]interface
 	case map[string]interface{}:
 		addresses = make(map[string]interface{}, len(updated))
 		for id, addr := range updated {
-			addresses[id] = addr
+			addresses[id] = mergedAddress(stored[id], addr)
 		}
 		sentEmpty = len(updated) == 0
 	case []interface{}:
@@ -241,6 +242,47 @@ func updatedAddresses(contact, req map[string]interface{}) (map[string]interface
 		return nil, false
 	}
 	return addresses, true
+}
+
+// mergedAddress returns a stored address after an update sent it under its
+// ID, without changing either. NodePing merges the update into the address
+// field by field, as probed on the test SubAccount on 2026-10-08:
+//
+//   - A field left out keeps its stored value; `suppressup` stays true unless
+//     false is sent.
+//   - `headers` and `querystrings` are replaced as a whole: the smaller map is
+//     stored and {} clears them. null keeps them, and a key sent as null is
+//     stored as null.
+//   - `data` cannot be cleared: "", null, false and 0 keep it. Anything else,
+//     {} or " " included, replaces it.
+//   - Any other field sent replaces the stored one.
+//
+// An address the contact does not hold under that ID is stored as sent.
+func mergedAddress(stored, sent interface{}) interface{} {
+	old, ok := stored.(map[string]interface{})
+	update, isMap := sent.(map[string]interface{})
+	if !ok || !isMap {
+		return sent
+	}
+
+	merged := make(map[string]interface{}, len(old)+len(update))
+	for k, v := range old {
+		merged[k] = v
+	}
+	for k, v := range update {
+		switch k {
+		case "headers", "querystrings":
+			if v == nil {
+				continue
+			}
+		case "data":
+			if v == nil || v == "" || v == false || v == float64(0) {
+				continue
+			}
+		}
+		merged[k] = v
+	}
+	return merged
 }
 
 // The NodePing API takes check-type specific arguments at the top level of a
@@ -509,6 +551,34 @@ func (m *MockNodePingServer) GetContact(id string) (map[string]interface{}, bool
 	defer m.mu.RUnlock()
 	c, ok := m.contacts[id]
 	return c, ok
+}
+
+// SetContactAddressMute mutes or unmutes a contact address the way the
+// NodePing web interface does, behind Terraform's back: with true, or until a
+// time with a number, the time in epoch milliseconds.
+func (m *MockNodePingServer) SetContactAddressMute(contactID, addrID string, mute interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	addresses, _ := m.contacts[contactID]["addresses"].(map[string]interface{})
+	if addr, ok := addresses[addrID].(map[string]interface{}); ok {
+		muted := make(map[string]interface{}, len(addr)+1)
+		for k, v := range addr {
+			muted[k] = v
+		}
+		muted["mute"] = mute
+		addresses[addrID] = muted
+	}
+}
+
+// ContactAddressMute returns the mute a contact address holds, and whether it
+// holds one.
+func (m *MockNodePingServer) ContactAddressMute(contactID, addrID string) (interface{}, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	addresses, _ := m.contacts[contactID]["addresses"].(map[string]interface{})
+	addr, _ := addresses[addrID].(map[string]interface{})
+	mute, ok := addr["mute"]
+	return mute, ok
 }
 
 // ContactWrites returns every create and update of a contact the mock has

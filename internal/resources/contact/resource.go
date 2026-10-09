@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
@@ -74,44 +75,11 @@ func (r *ContactResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	for _, addr := range plan.Addresses {
-		newAddr := client.NewAddress{
-			Address:       addr.Address.ValueString(),
-			Type:          addr.Type.ValueString(),
-			SuppressUp:    addr.SuppressUp.ValueBool(),
-			SuppressDown:  addr.SuppressDown.ValueBool(),
-			SuppressFirst: addr.SuppressFirst.ValueBool(),
-			SuppressDiag:  addr.SuppressDiag.ValueBool(),
-			SuppressAll:   addr.SuppressAll.ValueBool(),
-			Mute:          addr.Mute.ValueBool(),
+		newAddr, diags := addressRequest(ctx, addr, nil, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
 		}
-
-		if !addr.Action.IsNull() {
-			newAddr.Action = addr.Action.ValueString()
-		}
-		if !addr.Data.IsNull() {
-			newAddr.Data = addr.Data.ValueString()
-		}
-		if !addr.Priority.IsNull() {
-			priority := int(addr.Priority.ValueInt64())
-			newAddr.Priority = &priority
-		}
-		if !addr.Headers.IsNull() {
-			headers := make(map[string]string)
-			resp.Diagnostics.Append(addr.Headers.ElementsAs(ctx, &headers, false)...)
-			if resp.Diagnostics.HasError() {
-				return
-			}
-			newAddr.Headers = headers
-		}
-		if !addr.QueryStrings.IsNull() {
-			qs := make(map[string]string)
-			resp.Diagnostics.Append(addr.QueryStrings.ElementsAs(ctx, &qs, false)...)
-			if resp.Diagnostics.HasError() {
-				return
-			}
-			newAddr.QueryStrings = qs
-		}
-
 		createReq.NewAddresses = append(createReq.NewAddresses, newAddr)
 	}
 
@@ -198,10 +166,15 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 		CustRole: plan.CustRole.ValueString(),
 	}
 
-	existingAddressIDs := make(map[string]bool)
+	ignored := r.ignoredMutes(ctx, req.Config, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	priorAddresses := make(map[string]AddressModel, len(state.Addresses))
 	for _, addr := range state.Addresses {
-		if !addr.ID.IsNull() && !addr.ID.IsUnknown() {
-			existingAddressIDs[addr.ID.ValueString()] = true
+		if isKnown(addr.ID) {
+			priorAddresses[addr.ID.ValueString()] = addr
 		}
 	}
 
@@ -211,92 +184,26 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 	// (ModifyPlan refuses to remove the last one), and NodePing refuses an
 	// empty collection that would leave a contact without an address.
 	if len(plan.Addresses) > 0 {
-		updateReq.Addresses = make(map[string]client.ContactAddress)
+		updateReq.Addresses = make(map[string]client.AddressRequest)
 	}
-	for _, addr := range plan.Addresses {
-		if !addr.ID.IsNull() && !addr.ID.IsUnknown() && existingAddressIDs[addr.ID.ValueString()] {
-			addrUpdate := client.ContactAddress{
-				Address:       addr.Address.ValueString(),
-				Type:          addr.Type.ValueString(),
-				SuppressUp:    addr.SuppressUp.ValueBool(),
-				SuppressDown:  addr.SuppressDown.ValueBool(),
-				SuppressFirst: addr.SuppressFirst.ValueBool(),
-				SuppressDiag:  addr.SuppressDiag.ValueBool(),
-				SuppressAll:   addr.SuppressAll.ValueBool(),
+	for i, addr := range plan.Addresses {
+		var prior *AddressModel
+		if isKnown(addr.ID) {
+			if old, ok := priorAddresses[addr.ID.ValueString()]; ok {
+				prior = &old
 			}
+		}
 
-			if addr.Mute.ValueBool() {
-				addrUpdate.Mute = []byte("true")
-			}
+		sent, diags := addressRequest(ctx, addr, prior, muteIgnoredAt(ignored, i))
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 
-			if !addr.Action.IsNull() {
-				addrUpdate.Action = addr.Action.ValueString()
-			}
-			if !addr.Data.IsNull() {
-				addrUpdate.Data = addr.Data.ValueString()
-			}
-			if !addr.Priority.IsNull() {
-				priority := int(addr.Priority.ValueInt64())
-				addrUpdate.Priority = &priority
-			}
-			if !addr.Headers.IsNull() {
-				headers := make(map[string]string)
-				resp.Diagnostics.Append(addr.Headers.ElementsAs(ctx, &headers, false)...)
-				if resp.Diagnostics.HasError() {
-					return
-				}
-				addrUpdate.Headers = headers
-			}
-			if !addr.QueryStrings.IsNull() {
-				qs := make(map[string]string)
-				resp.Diagnostics.Append(addr.QueryStrings.ElementsAs(ctx, &qs, false)...)
-				if resp.Diagnostics.HasError() {
-					return
-				}
-				addrUpdate.QueryStrings = qs
-			}
-
-			updateReq.Addresses[addr.ID.ValueString()] = addrUpdate
+		if prior != nil {
+			updateReq.Addresses[addr.ID.ValueString()] = sent
 		} else {
-			newAddr := client.NewAddress{
-				Address:       addr.Address.ValueString(),
-				Type:          addr.Type.ValueString(),
-				SuppressUp:    addr.SuppressUp.ValueBool(),
-				SuppressDown:  addr.SuppressDown.ValueBool(),
-				SuppressFirst: addr.SuppressFirst.ValueBool(),
-				SuppressDiag:  addr.SuppressDiag.ValueBool(),
-				SuppressAll:   addr.SuppressAll.ValueBool(),
-				Mute:          addr.Mute.ValueBool(),
-			}
-
-			if !addr.Action.IsNull() {
-				newAddr.Action = addr.Action.ValueString()
-			}
-			if !addr.Data.IsNull() {
-				newAddr.Data = addr.Data.ValueString()
-			}
-			if !addr.Priority.IsNull() {
-				priority := int(addr.Priority.ValueInt64())
-				newAddr.Priority = &priority
-			}
-			if !addr.Headers.IsNull() {
-				headers := make(map[string]string)
-				resp.Diagnostics.Append(addr.Headers.ElementsAs(ctx, &headers, false)...)
-				if resp.Diagnostics.HasError() {
-					return
-				}
-				newAddr.Headers = headers
-			}
-			if !addr.QueryStrings.IsNull() {
-				qs := make(map[string]string)
-				resp.Diagnostics.Append(addr.QueryStrings.ElementsAs(ctx, &qs, false)...)
-				if resp.Diagnostics.HasError() {
-					return
-				}
-				newAddr.QueryStrings = qs
-			}
-
-			updateReq.NewAddresses = append(updateReq.NewAddresses, newAddr)
+			updateReq.NewAddresses = append(updateReq.NewAddresses, sent)
 		}
 	}
 
@@ -312,10 +219,12 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 	plan.ID = types.StringValue(contact.ID)
 	plan.CustomerID = types.StringValue(contact.CustomerID)
 
-	plan.Addresses = mapAddressesToModel(ctx, contact.Addresses, plan.Addresses, &resp.Diagnostics)
+	planned := plan.Addresses
+	plan.Addresses = mapAddressesToModel(ctx, contact.Addresses, planned, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	keepIgnoredMutes(plan.Addresses, planned, ignored)
 
 	tflog.Debug(ctx, "Updated contact", map[string]interface{}{
 		"id": contact.ID,
@@ -326,7 +235,9 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 
 // ModifyPlan plans the ID of every address on an update; see
 // plannedAddressIDs. A create has no IDs to carry over and a destroy no plan.
-// It also refuses an update that removes a contact's last address.
+// It also refuses an update that removes a contact's last address, or the
+// data of an address it keeps. Under the provider's ignore_mute, it plans the
+// prior mute of every address whose mute is left to NodePing; see mute.go.
 func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
@@ -355,25 +266,75 @@ func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	// with the misleading "Account must have at least one 'owner' contact."
 	// A contact created without an address is fine and can stay that way.
 	if len(planned) == 0 && len(prior) > 0 {
-		var id, name types.String
-		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &id)...)
-		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("name"), &name)...)
-		contact := "ID " + id.ValueString()
-		if name.ValueString() != "" {
-			contact = fmt.Sprintf("%q (%s)", name.ValueString(), contact)
-		}
 		resp.Diagnostics.AddAttributeError(
 			addressPath,
 			"Cannot remove a contact's last address",
 			fmt.Sprintf("The configuration removes every address of contact %s, but NodePing cannot remove a contact's last address. "+
-				"Keep at least one address block, or delete the contact and create it again.", contact),
+				"Keep at least one address block, or delete the contact and create it again.", describeContact(ctx, req.State, &resp.Diagnostics)),
 		)
 		return
 	}
 
-	for i, id := range plannedAddressIDs(prior, planned) {
+	ids := plannedAddressIDs(prior, planned)
+	for i, id := range ids {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, addressPath.AtListIndex(i).AtName("id"), id)...)
 	}
+
+	ignored := r.ignoredMutes(ctx, req.Config, &resp.Diagnostics)
+	for i, mute := range plannedIgnoredMutes(prior, ids, ignored) {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, addressPath.AtListIndex(i).AtName("mute"), mute)...)
+	}
+
+	for _, i := range addressesDroppingData(prior, planned, ids) {
+		resp.Diagnostics.AddAttributeError(
+			addressPath.AtListIndex(i).AtName("data"),
+			"Cannot remove an address's data",
+			fmt.Sprintf("The configuration removes data from address[%d], a %s address of contact %s, but NodePing cannot clear an address's data: "+
+				"an update can only replace it. Remove the address block in one apply, then add it back without data in the next; "+
+				"NodePing gives it a new ID. If it is the contact's only address, add another one first: NodePing cannot remove a contact's last address.",
+				i, planned[i].Type.ValueString(), describeContact(ctx, req.State, &resp.Diagnostics)),
+		)
+	}
+}
+
+// describeContact names the contact in a plan error: by name and ID, or by
+// ID alone when it has no name.
+func describeContact(ctx context.Context, state tfsdk.State, diags *diag.Diagnostics) string {
+	var id, name types.String
+	diags.Append(state.GetAttribute(ctx, path.Root("id"), &id)...)
+	diags.Append(state.GetAttribute(ctx, path.Root("name"), &name)...)
+	contact := "ID " + id.ValueString()
+	if name.ValueString() != "" {
+		contact = fmt.Sprintf("%q (%s)", name.ValueString(), contact)
+	}
+	return contact
+}
+
+// addressesDroppingData returns the position of every planned block that
+// keeps an existing address -- its ID, from plannedAddressIDs, is known --
+// but no longer sets the data that address has. NodePing cannot clear an
+// address's data: "", null, false and 0 all keep it, and only a value such as
+// {} or " " replaces it (finding 32). Data set to "" counts as removed, as
+// it changes nothing in NodePing. A new address has nothing to clear, and
+// data not known until apply cannot be told yet; Terraform plans again then.
+func addressesDroppingData(prior, planned []AddressModel, ids []types.String) []int {
+	priorData := make(map[string]types.String, len(prior))
+	for _, old := range prior {
+		if isKnown(old.ID) {
+			priorData[old.ID.ValueString()] = old.Data
+		}
+	}
+
+	var dropping []int
+	for i, block := range planned {
+		if !isKnown(ids[i]) || block.Data.IsUnknown() {
+			continue
+		}
+		if old := priorData[ids[i].ValueString()]; old.ValueString() != "" && block.Data.ValueString() == "" {
+			dropping = append(dropping, i)
+		}
+	}
+	return dropping
 }
 
 // plannedAddressIDs decides, for each planned address block, which existing
@@ -549,7 +510,8 @@ func (r *ContactResource) ImportState(ctx context.Context, req resource.ImportSt
 // apart by ID, so matching those by value could swap them. Whatever the plan
 // does not account for follows in ID order -- an address added outside
 // Terraform, or every address when there is no plan to match against, as on
-// import.
+// import. An address with no headers or query strings reads them as the block
+// at its position has them; see emptyAsPlanned.
 func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.ContactAddress, planAddresses []AddressModel, diags *diag.Diagnostics) []AddressModel {
 	if len(apiAddresses) == 0 {
 		return nil
@@ -619,24 +581,47 @@ func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.Con
 	// neighbour's ID. Contact groups reference address IDs, so that quietly
 	// repoints any group that named one of them.
 	ordered := make([]string, 0, len(ids))
+	blocks := make([]*AddressModel, 0, len(ids))
 	next := 0
-	for _, id := range matched {
+	for i, id := range matched {
 		if id == "" {
 			if next < len(leftover) {
 				ordered = append(ordered, leftover[next])
+				blocks = append(blocks, &planAddresses[i])
 				next++
 			}
 			continue
 		}
 		ordered = append(ordered, id)
+		blocks = append(blocks, &planAddresses[i])
 	}
-	ordered = append(ordered, leftover[next:]...)
+	for _, id := range leftover[next:] {
+		ordered = append(ordered, id)
+		blocks = append(blocks, nil)
+	}
 
 	result := make([]AddressModel, 0, len(ordered))
-	for _, id := range ordered {
-		result = append(result, addressToModel(ctx, id, apiAddresses[id], diags))
+	for i, id := range ordered {
+		model := addressToModel(ctx, id, apiAddresses[id], diags)
+		if block := blocks[i]; block != nil {
+			model.Headers = emptyAsPlanned(model.Headers, block.Headers)
+			model.QueryStrings = emptyAsPlanned(model.QueryStrings, block.QueryStrings)
+		}
+		result = append(result, model)
 	}
 	return result
+}
+
+// emptyAsPlanned reads headers or query strings with no entries the way the
+// block has them. NodePing holds none either as {} -- what an update that
+// cleared them leaves -- or with no key at all, and addressToModel reads both
+// as null, as it must for an import. A block that is `headers = {}` has to
+// read back as {} instead; a block without headers stays null.
+func emptyAsPlanned(read, planned types.Map) types.Map {
+	if read.IsNull() && !planned.IsNull() && !planned.IsUnknown() && len(planned.Elements()) == 0 {
+		return planned
+	}
+	return read
 }
 
 // addressKey identifies an address the way a configuration does. NodePing

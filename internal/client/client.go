@@ -59,8 +59,9 @@ type ClientConfig struct {
 	Timeout      time.Duration
 	UserAgent    string
 	DefaultTags  []string
-	// IgnoreMute leaves the mute of a check whose configuration does not set
-	// one to NodePing. See the provider's ignore_mute.
+	// IgnoreMute leaves the mute of a check or contact address whose
+	// configuration does not set one to NodePing. See the provider's
+	// ignore_mute.
 	IgnoreMute bool
 }
 

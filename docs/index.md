@@ -120,9 +120,9 @@ The check's `tags_all` is then `["managed-by-terraform", "team-devops", "product
 
 On import, `tags` is reconstructed from `tags_all` by removing the provider's current `default_tags`.
 
-## Muting Checks in NodePing
+## Muting in NodePing
 
-Set `ignore_mute` when checks are muted and unmuted in the NodePing web interface rather than in Terraform:
+Set `ignore_mute` when checks and contact addresses are muted and unmuted in the NodePing web interface rather than in Terraform:
 
 ```terraform
 provider "nodeping" {
@@ -131,13 +131,13 @@ provider "nodeping" {
 }
 ```
 
-Terraform then leaves `mute` alone on every check whose configuration does not set it, with no `lifecycle { ignore_changes = [mute] }` needed on each check:
+Terraform then leaves `mute` alone on every check, and every contact `address` block, whose configuration does not set it, with no `lifecycle { ignore_changes = [...] }` needed:
 
-- A plan never changes `mute`. It keeps the value the last refresh read from NodePing, `true` for a check muted until a set time as well.
+- A plan never changes `mute`. It keeps the value the last refresh read from NodePing, `true` for a check or address muted until a set time as well.
 - An update does not send `mute`, so NodePing keeps whatever it holds, including a mute set after the plan was made, as when a saved plan is applied later. The state keeps the planned value until the next refresh reads the real one.
-- A new check starts unmuted.
+- A new check or address starts unmuted.
 
-A check that sets `mute` itself is still managed, the same as without `ignore_mute`.
+A check or address that sets `mute` itself is still managed, the same as without `ignore_mute`.
 
 ## Schema
 
@@ -151,4 +151,4 @@ A check that sets `mute` itself is still managed, the same as without `ignore_mu
 - `retry_wait_min` (Number) - Minimum wait time in seconds between retries. Defaults to `1`.
 - `retry_wait_max` (Number) - Maximum wait time in seconds between retries, also for a 429 that asks for a longer wait in `Retry-After`. Defaults to `30`.
 - `default_tags` (List of String) - Default tags to apply to all resources that support tags (e.g., checks). These tags are merged with resource-specific tags.
-- `ignore_mute` (Boolean) - Leave `mute` to NodePing on every check whose configuration does not set it: a plan never changes it and an update does not send it, so a check muted or unmuted in the NodePing web interface stays that way. A check that sets `mute` is still managed. Defaults to `false`. See [Muting Checks in NodePing](#muting-checks-in-nodeping).
+- `ignore_mute` (Boolean) - Leave `mute` to NodePing on every check and contact address whose configuration does not set it: a plan never changes it and an update does not send it, so a check or address muted or unmuted in the NodePing web interface stays that way. A check or address that sets `mute` is still managed. Defaults to `false`. See [Muting in NodePing](#muting-in-nodeping).
