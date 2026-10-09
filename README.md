@@ -480,6 +480,10 @@ TF_ACC=1 go test -run TestAcc ./...
 
 # The same, in Docker, with the Terraform version pinned in the Dockerfile
 make test-acceptance
+
+# Opt-in tests against the real NodePing API, which write to a dedicated test
+# SubAccount; see CONTRIBUTING.md
+make test-acceptance-live
 ```
 
 ### Linting

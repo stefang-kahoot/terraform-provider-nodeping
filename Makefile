@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-acceptance test-coverage docs lint clean docker-build docker-test docker-tidy
+.PHONY: build test test-unit test-acceptance test-acceptance-live test-coverage docs lint clean docker-build docker-test docker-tidy
 
 DOCKER_IMAGE := terraform-provider-nodeping
 GO_VERSION := 1.27
@@ -18,6 +18,16 @@ test-unit:
 test-acceptance:
 	docker build --target test -t $(DOCKER_IMAGE):test .
 	docker run --rm -e TF_ACC=1 $(DOCKER_IMAGE):test go test -v -timeout 20m -run "TestAcc" ./...
+
+# The TestAccLive tests run against the real NodePing API and write to the
+# account of NODEPING_API_TOKEN_ACCEPTANCE_TESTS: a dedicated test SubAccount,
+# whose customer ID NODEPING_ACCEPTANCE_TESTS_CUSTOMER_ID gives. -e passes
+# both from the environment, so neither shows on a command line.
+test-acceptance-live:
+	@test -n "$$NODEPING_API_TOKEN_ACCEPTANCE_TESTS" || { echo "set NODEPING_API_TOKEN_ACCEPTANCE_TESTS and NODEPING_ACCEPTANCE_TESTS_CUSTOMER_ID; see CONTRIBUTING.md" >&2; exit 1; }
+	docker build --target test -t $(DOCKER_IMAGE):test .
+	docker run --rm -e TF_ACC=1 -e NODEPING_API_TOKEN_ACCEPTANCE_TESTS -e NODEPING_ACCEPTANCE_TESTS_CUSTOMER_ID \
+		$(DOCKER_IMAGE):test go test -v -count=1 -timeout 20m -run "TestAccLive" ./internal/provider/
 
 # Regenerate the README version table from go.mod and the Dockerfile.
 docs:
@@ -59,6 +69,7 @@ help:
 	@echo "  test        - Run all tests using Docker"
 	@echo "  test-unit   - Run unit tests only using Docker"
 	@echo "  test-acceptance - Run terraform acceptance tests against the API mock"
+	@echo "  test-acceptance-live - Run the acceptance tests that write to a real NodePing test account"
 	@echo "  test-coverage   - Run tests and print total coverage"
 	@echo "  docs        - Regenerate the README version table"
 	@echo "  tidy        - Run go mod tidy using Docker"

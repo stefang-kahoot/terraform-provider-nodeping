@@ -38,6 +38,41 @@ If you change a workflow, CI also runs `actionlint` and `zizmor --offline` over
 `.github/`. Third-party actions must be pinned to a full commit SHA with a
 trailing version comment (`.github/zizmor.yml`).
 
+## Tests against the NodePing API
+
+The `TestAccLive*` tests check the provider against the real NodePing API
+rather than the mock. For each resource they create one object, update it in
+place, import it and destroy it. They write to the account, so they are opt-in
+and CI does not run them. Without these variables they are skipped:
+
+- `NODEPING_API_TOKEN_ACCEPTANCE_TESTS`: the API token of a dedicated test
+  SubAccount. Never use the token of an account that monitors anything.
+- `NODEPING_ACCEPTANCE_TESTS_CUSTOMER_ID`: that SubAccount's customer ID. If
+  the token is set and this is not, the tests fail.
+
+Before writing anything, each test lists the account's checks, contacts and
+contact groups, and stops unless every ID starts with that customer ID. Each
+object a test creates is named `tf-acc-live-<random>` and destroyed at the
+end, but a failed run can leave some behind to delete by hand. The provider
+sees only the acceptance token: your own `NODEPING_API_TOKEN`,
+`NODEPING_API_KEY`, `NODEPING_CUSTOMER_ID` and `NODEPING_API_URL` are ignored
+for the run.
+
+Set the variables for the one command, so that a later
+`TF_ACC=1 go test ./...` does not write to the account as well. `-count=1`
+stops `go test` from reporting a cached result without calling NodePing:
+
+```bash
+TF_ACC=1 \
+NODEPING_API_TOKEN_ACCEPTANCE_TESTS="$(cat path/to/test-subaccount-token)" \
+NODEPING_ACCEPTANCE_TESTS_CUSTOMER_ID='your-customer-id-here' \
+go test -v -count=1 -timeout 20m -run TestAccLive ./internal/provider/
+```
+
+`make test-acceptance-live` runs the same tests in Docker, with the Terraform
+version pinned in the `Dockerfile`. It takes both variables from your
+environment.
+
 ## Required checks
 
 Pull requests into `main` must pass these 10 checks:
