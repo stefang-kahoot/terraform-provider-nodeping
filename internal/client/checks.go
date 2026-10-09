@@ -29,7 +29,7 @@ func (c *Client) GetCheck(ctx context.Context, id string) (*Check, error) {
 		err = errNoID
 	}
 	if err != nil {
-		return nil, confirmGone(ctx, c.ListChecks, "check", id, fmt.Errorf("failed to get check: %w", err))
+		return nil, confirmGone(ctx, &c.checkList, c.ListChecks, "check", id, fmt.Errorf("failed to get check: %w", err))
 	}
 	return &result, nil
 }
@@ -41,6 +41,9 @@ func (c *Client) CreateCheck(ctx context.Context, req CheckCreateRequest) (*Chec
 		path:   "/checks",
 		body:   req,
 	}, &result)
+	// A list sent before now may lack the new check, which even a failed
+	// create may have added.
+	c.checkList.created()
 	if err != nil {
 		name := req.Label
 		if name == "" {
@@ -71,7 +74,7 @@ func (c *Client) DeleteCheck(ctx context.Context, id string) error {
 		path:   "/checks/" + url.PathEscape(id),
 	}, &result)
 	if err != nil {
-		return confirmGone(ctx, c.ListChecks, "check", id, fmt.Errorf("failed to delete check: %w", err))
+		return confirmGone(ctx, &c.checkList, c.ListChecks, "check", id, fmt.Errorf("failed to delete check: %w", err))
 	}
 	if !result.OK {
 		return fmt.Errorf("delete check returned ok=false")
