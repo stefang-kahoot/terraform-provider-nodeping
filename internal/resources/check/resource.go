@@ -17,6 +17,7 @@ import (
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/checkattr"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/importid"
 )
 
 var (
@@ -281,35 +282,18 @@ func (r *CheckResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 }
 
 func (r *CheckResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	idParts := strings.Split(req.ID, ":")
-
-	var checkID string
-	var customerID string
-
-	if len(idParts) == 2 {
-		customerID = idParts[0]
-		checkID = idParts[1]
-	} else if len(idParts) == 1 {
-		checkID = idParts[0]
-	} else {
-		resp.Diagnostics.AddError(
-			"Invalid Import ID",
-			fmt.Sprintf("Expected import ID in format 'check_id' or 'customer_id:check_id', got: %s", req.ID),
-		)
+	checkID, ok := importid.Parse(req.ID, "check", &resp.Diagnostics)
+	if !ok {
 		return
 	}
 
 	tflog.Debug(ctx, "Importing check", map[string]interface{}{
-		"check_id":    checkID,
-		"customer_id": customerID,
+		"check_id": checkID,
 	})
 
-	c := r.client
-	if customerID != "" {
-		c = c.WithCustomerID(customerID)
-	}
-
-	check, err := c.GetCheck(ctx, checkID)
+	// r.client, as for every other request: a SubAccount is reached through a
+	// provider instance carrying its customer_id. See the importid package.
+	check, err := r.client.GetCheck(ctx, checkID)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Importing Check",
@@ -328,7 +312,7 @@ func (r *CheckResource) ImportState(ctx context.Context, req resource.ImportStat
 	// the configuration. An import has no configuration to read, so reconstruct
 	// tags as the half of tags_all that is not a provider default -- that is
 	// what the configuration would have to say to produce this check.
-	resp.Diagnostics.Append(setImportedTags(ctx, &state, c.GetDefaultTags())...)
+	resp.Diagnostics.Append(setImportedTags(ctx, &state, r.client.GetDefaultTags())...)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }

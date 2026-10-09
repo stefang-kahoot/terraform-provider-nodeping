@@ -80,10 +80,22 @@ Contact groups can be imported using the group ID:
 terraform import nodeping_contactgroup.example 201205050153W2Q4C-G-1ZIYU
 ` + "```" + `
 
-To import a group from a SubAccount, prefix it with the customer ID:
+To import a contact group from a SubAccount, give the resource a provider
+configured with the SubAccount's ` + "`customer_id`" + ` and import it by its
+plain ID, as above. That provider sends the customer ID with every request,
+including the reads, updates and deletes after the import:
 
-` + "```shell" + `
-terraform import nodeping_contactgroup.example 201205050153W2Q4C:201205050153W2Q4C-G-1ZIYU
+` + "```hcl" + `
+provider "nodeping" {
+  alias       = "subaccount"
+  api_token   = var.nodeping_token
+  customer_id = "SUBACCOUNT_ID"
+}
+
+resource "nodeping_contactgroup" "example" {
+  provider = nodeping.subaccount
+  # ...
+}
 ` + "```" + `
 `,
 		Attributes: map[string]schema.Attribute{

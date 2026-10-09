@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -12,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/importid"
 )
 
 var (
@@ -248,31 +248,14 @@ func (r *ContactGroupResource) Delete(ctx context.Context, req resource.DeleteRe
 }
 
 func (r *ContactGroupResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	idParts := strings.Split(req.ID, ":")
-
-	var groupID string
-	var customerID string
-
-	switch len(idParts) {
-	case 1:
-		groupID = idParts[0]
-	case 2:
-		customerID = idParts[0]
-		groupID = idParts[1]
-	default:
-		resp.Diagnostics.AddError(
-			"Invalid Import ID",
-			fmt.Sprintf("Expected import ID in format 'contactgroup_id' or 'customer_id:contactgroup_id', got: %s", req.ID),
-		)
+	groupID, ok := importid.Parse(req.ID, "contactgroup", &resp.Diagnostics)
+	if !ok {
 		return
 	}
 
-	c := r.client
-	if customerID != "" {
-		c = c.WithCustomerID(customerID)
-	}
-
-	group, err := c.GetContactGroup(ctx, groupID)
+	// r.client, as for every other request: a SubAccount is reached through a
+	// provider instance carrying its customer_id. See the importid package.
+	group, err := r.client.GetContactGroup(ctx, groupID)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Importing Contact Group",

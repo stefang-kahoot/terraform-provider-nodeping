@@ -105,26 +105,6 @@ func NewClient(cfg ClientConfig) *Client {
 	}
 }
 
-// WithCustomerID returns a client for the account customerID. It starts with
-// lists of its own (see listCache), as those of c may be of another account.
-// Creates through c do not drop them, which is safe while it only reads
-// objects that existed before it, as ImportState does.
-func (c *Client) WithCustomerID(customerID string) *Client {
-	return &Client{
-		httpClient:   c.httpClient,
-		baseURL:      c.baseURL,
-		apiToken:     c.apiToken,
-		customerID:   customerID,
-		rateLimiter:  c.rateLimiter,
-		maxRetries:   c.maxRetries,
-		retryMinWait: c.retryMinWait,
-		retryMaxWait: c.retryMaxWait,
-		userAgent:    c.userAgent,
-		defaultTags:  c.defaultTags,
-		ignoreMute:   c.ignoreMute,
-	}
-}
-
 func (c *Client) GetDefaultTags() []string {
 	return c.defaultTags
 }

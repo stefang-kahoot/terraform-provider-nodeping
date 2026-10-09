@@ -50,26 +50,6 @@ func TestNewClientDefaults(t *testing.T) {
 	}
 }
 
-func TestWithCustomerID(t *testing.T) {
-	c := NewClient(ClientConfig{
-		APIToken:   "test-token",
-		CustomerID: "original",
-		IgnoreMute: true,
-	})
-
-	newClient := c.WithCustomerID("new-customer")
-
-	if newClient.customerID != "new-customer" {
-		t.Errorf("expected customerID %q, got %q", "new-customer", newClient.customerID)
-	}
-	if c.customerID != "original" {
-		t.Errorf("original client customerID should not change, got %q", c.customerID)
-	}
-	if !newClient.IgnoreMute() {
-		t.Error("ignore_mute should carry over to the SubAccount client")
-	}
-}
-
 func TestDoRequestBasicAuth(t *testing.T) {
 	var receivedAuth string
 
