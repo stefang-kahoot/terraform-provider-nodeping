@@ -290,3 +290,49 @@ resource "nodeping_check" "imported" {
 		},
 	})
 }
+
+// NodePing merges sendheaders and receiveheaders per key: a smaller map, an
+// empty one or none at all keeps every header, and only a header sent as null
+// is deleted.
+func TestAccCheckResource_removesHeaders(t *testing.T) {
+	for _, attribute := range []string{"sendheaders", "receiveheaders"} {
+		t.Run(attribute, func(t *testing.T) {
+			mock := testutil.NewMockNodePingServer()
+			t.Cleanup(mock.Close)
+
+			config := func(headers string) string {
+				return providerConfig(mock.URL()) + `
+resource "nodeping_check" "test" {
+  type   = "HTTPADV"
+  target = "https://example.com/health"
+` + headers + `
+}
+`
+			}
+
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6ProviderFactories(),
+				Steps: []resource.TestStep{
+					{
+						Config: config(attribute + ` = { "X-One" = "1", "X-Two" = "2" }`),
+						Check:  resource.TestCheckResourceAttr("nodeping_check.test", attribute+".%", "2"),
+					},
+					{
+						Config: config(attribute + ` = { "X-One" = "1" }`),
+						Check: resource.ComposeAggregateTestCheckFunc(
+							resource.TestCheckResourceAttr("nodeping_check.test", attribute+".%", "1"),
+							expectStored(mock, "nodeping_check.test", "param", attribute, `{"X-One":"1"}`),
+						),
+					},
+					{
+						Config: config(""),
+						Check: resource.ComposeAggregateTestCheckFunc(
+							resource.TestCheckNoResourceAttr("nodeping_check.test", attribute+".%"),
+							expectStored(mock, "nodeping_check.test", "param", attribute, `{}`),
+						),
+					},
+				},
+			})
+		})
+	}
+}

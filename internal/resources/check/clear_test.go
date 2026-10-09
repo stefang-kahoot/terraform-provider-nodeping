@@ -234,3 +234,58 @@ func TestKeep(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildUpdateRequestDeletesRemovedHeaders(t *testing.T) {
+	t.Parallel()
+
+	headers := func(h map[string]string) types.Map {
+		elements := make(map[string]attr.Value, len(h))
+		for name, value := range h {
+			elements[name] = types.StringValue(value)
+		}
+		return types.MapValueMust(types.StringType, elements)
+	}
+	none := types.MapNull(types.StringType)
+
+	tests := []struct {
+		name          string
+		before, after types.Map
+		want          string
+	}{
+		{"one header of two removed", headers(map[string]string{"X-One": "1", "X-Two": "2"}), headers(map[string]string{"X-One": "1"}), `{"X-One":"1","X-Two":null}`},
+		{"every header removed", headers(map[string]string{"X-One": "1", "X-Two": "2"}), none, `{"X-One":null,"X-Two":null}`},
+		{"every header removed, leaving an empty map", headers(map[string]string{"X-One": "1"}), headers(map[string]string{}), `{"X-One":null}`},
+		{"a header renamed", headers(map[string]string{"X-One": "1"}), headers(map[string]string{"X-Uno": "1"}), `{"X-One":null,"X-Uno":"1"}`},
+		{"a header changed", headers(map[string]string{"X-One": "1"}), headers(map[string]string{"X-One": "9"}), `{"X-One":"9"}`},
+		{"headers unchanged", headers(map[string]string{"X-One": "1"}), headers(map[string]string{"X-One": "1"}), `{"X-One":"1"}`},
+		{"no headers before or after", none, none, ``},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			for _, attribute := range []string{"sendheaders", "receiveheaders"} {
+				state, plan := unset(), unset()
+				state.SendHeaders, plan.SendHeaders = none, none
+				state.ReceiveHeaders, plan.ReceiveHeaders = none, none
+				if attribute == "sendheaders" {
+					state.SendHeaders, plan.SendHeaders = tt.before, tt.after
+				} else {
+					state.ReceiveHeaders, plan.ReceiveHeaders = tt.before, tt.after
+				}
+
+				r := &CheckResource{}
+				var diags diag.Diagnostics
+				req := r.buildUpdateRequest(context.Background(), plan, state, &diags)
+				if diags.HasError() {
+					t.Fatalf("building the request raised %v", diags.Errors())
+				}
+				sent := requestJSON(t, req)
+				if got := sent[attribute]; got != tt.want {
+					t.Errorf("%s = %s, want %s", attribute, got, tt.want)
+				}
+			}
+		})
+	}
+}

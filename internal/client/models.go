@@ -238,14 +238,14 @@ type CheckCreateRequest struct {
 	Mute           interface{}              `json:"mute,omitempty"`
 	Description    string                   `json:"description,omitempty"`
 	Tags           []string                 `json:"tags,omitempty"`
-	ContentString  *string                  `json:"contentstring,omitempty"` // "" clears it
-	Regex          interface{}              `json:"regex,omitempty"`         // false clears it
-	Invert         interface{}              `json:"invert,omitempty"`        // false clears it
-	Follow         interface{}              `json:"follow,omitempty"`        // false clears it
-	Method         *string                  `json:"method,omitempty"`        // "" clears it
-	StatusCode     interface{}              `json:"statuscode,omitempty"`    // a number, or "" to clear it
-	SendHeaders    map[string]string        `json:"sendheaders,omitempty"`
-	ReceiveHeaders map[string]string        `json:"receiveheaders,omitempty"`
+	ContentString  *string                  `json:"contentstring,omitempty"`  // "" clears it
+	Regex          interface{}              `json:"regex,omitempty"`          // false clears it
+	Invert         interface{}              `json:"invert,omitempty"`         // false clears it
+	Follow         interface{}              `json:"follow,omitempty"`         // false clears it
+	Method         *string                  `json:"method,omitempty"`         // "" clears it
+	StatusCode     interface{}              `json:"statuscode,omitempty"`     // a number, or "" to clear it
+	SendHeaders    map[string]*string       `json:"sendheaders,omitempty"`    // merged per header; a nil value deletes the header
+	ReceiveHeaders map[string]*string       `json:"receiveheaders,omitempty"` // merged per header; a nil value deletes the header
 	Data           interface{}              `json:"data,omitempty"`
 	PostData       *string                  `json:"postdata,omitempty"` // "" clears it
 	Port           interface{}              `json:"port,omitempty"`

@@ -626,17 +626,8 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 		req.StatusCode = int(plan.StatusCode.ValueInt64())
 	}
 
-	if !plan.SendHeaders.IsNull() {
-		headers := make(map[string]string)
-		diags.Append(plan.SendHeaders.ElementsAs(ctx, &headers, false)...)
-		req.SendHeaders = headers
-	}
-
-	if !plan.ReceiveHeaders.IsNull() {
-		headers := make(map[string]string)
-		diags.Append(plan.ReceiveHeaders.ElementsAs(ctx, &headers, false)...)
-		req.ReceiveHeaders = headers
-	}
+	req.SendHeaders = headersToAPI(ctx, plan.SendHeaders, diags)
+	req.ReceiveHeaders = headersToAPI(ctx, plan.ReceiveHeaders, diags)
 
 	req.PostData = nonEmpty(plan.PostData)
 

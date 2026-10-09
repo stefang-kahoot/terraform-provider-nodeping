@@ -33,6 +33,9 @@ func (r *CheckResource) buildUpdateRequest(ctx context.Context, plan, state *Che
 //   - regex, invert, follow, ipv6: false. NodePing keeps the key, as false.
 //   - dep: false, NodePing's documented way to remove a dependency.
 //   - runlocations: [].
+//   - sendheaders, receiveheaders: each removed header as null. NodePing
+//     merges headers per name, so a smaller map, {} or none at all would
+//     keep every header.
 //
 // The other attributes have not been probed and are left out as before, so
 // removing one still keeps its value at NodePing.
@@ -69,6 +72,43 @@ func clearRemoved(req *client.CheckCreateRequest, plan, state *CheckResourceMode
 			*v.field = v.cleared
 		}
 	}
+
+	req.SendHeaders = deleteRemovedKeys(req.SendHeaders, state.SendHeaders, plan.SendHeaders)
+	req.ReceiveHeaders = deleteRemovedKeys(req.ReceiveHeaders, state.ReceiveHeaders, plan.ReceiveHeaders)
+}
+
+// deleteRemovedKeys adds to the headers an update sends each header the
+// prior state has and the plan does not, as null, which deletes it.
+func deleteRemovedKeys(sent map[string]*string, prior, planned types.Map) map[string]*string {
+	if prior.IsNull() || prior.IsUnknown() || planned.IsUnknown() {
+		return sent
+	}
+	kept := planned.Elements()
+	for name := range prior.Elements() {
+		if _, ok := kept[name]; ok {
+			continue
+		}
+		if sent == nil {
+			sent = make(map[string]*string)
+		}
+		sent[name] = nil
+	}
+	return sent
+}
+
+// headersToAPI converts configured headers to the request shape, or nil when
+// there are none.
+func headersToAPI(ctx context.Context, v types.Map, diags *diag.Diagnostics) map[string]*string {
+	if v.IsNull() || v.IsUnknown() {
+		return nil
+	}
+	headers := make(map[string]string)
+	diags.Append(v.ElementsAs(ctx, &headers, false)...)
+	out := make(map[string]*string, len(headers))
+	for name, value := range headers {
+		out[name] = &value
+	}
+	return out
 }
 
 // removed reports whether the prior state holds a value the plan no longer
