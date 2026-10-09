@@ -22,7 +22,7 @@ import (
 // has to be sent as cleared: suppress flags always go out, false included,
 // and headers or query strings the prior state had and the plan has not go
 // out as {}. A new address leaves out what is unset. Data cannot be cleared
-// at all.
+// at all; ModifyPlan refuses to remove it.
 func addressRequest(ctx context.Context, addr AddressModel, prior *AddressModel) (client.AddressRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 

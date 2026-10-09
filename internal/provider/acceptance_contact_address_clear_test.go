@@ -3,6 +3,8 @@ package provider_test
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -111,6 +113,37 @@ func addrClearSent(mock *testutil.MockNodePingServer, key, want string) resource
 		}
 		if got != want {
 			return fmt.Errorf("the last %s sent %s %s, want %s", last.Method, key, got, want)
+		}
+		return nil
+	}
+}
+
+// addrClearSnapshot records the contact as the mock holds it, to compare
+// later with addrClearUnchanged.
+func addrClearSnapshot(mock *testutil.MockNodePingServer, into *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		contactID, _, err := addrClearIDs(s)
+		if err != nil {
+			return err
+		}
+		contact, ok := mock.GetContact(contactID)
+		if !ok {
+			return fmt.Errorf("contact %s is not in the mock", contactID)
+		}
+		body, err := json.Marshal(contact)
+		*into = string(body)
+		return err
+	}
+}
+
+func addrClearUnchanged(mock *testutil.MockNodePingServer, snapshot *string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		var now string
+		if err := addrClearSnapshot(mock, &now)(s); err != nil {
+			return err
+		}
+		if now != *snapshot {
+			return fmt.Errorf("the contact changed in the mock")
 		}
 		return nil
 	}
@@ -252,6 +285,96 @@ func TestAccContactResource_addressEmptyHeaders(t *testing.T) {
 					resource.TestCheckNoResourceAttr(addrClearContact, "address.0.headers.%"),
 					addrClearSent(mock, "headers", addrClearLeftOut),
 					addrClearStored(mock, "headers", `{}`),
+				),
+			},
+		},
+	})
+}
+
+// addrClearDataError matches the plan error for removing an address's data.
+// Terraform wraps long lines, so any run of whitespace matches a space.
+var addrClearDataError = regexp.MustCompile(`NodePing\s+cannot\s+clear\s+an\s+address's\s+data`)
+
+// addrClearDataConfig is a contact with a webhook, with or without data, or
+// none, followed by an email address.
+func addrClearDataConfig(url, hook string) string {
+	return providerConfig(url) + fmt.Sprintf(`
+resource "nodeping_contact" "clear" {
+  name = "acc-address-clear"
+%s
+  address {
+    type    = "email"
+    address = "a@example.com"
+  }
+}
+`, hook)
+}
+
+const (
+	addrClearHook = `
+  address {
+    type    = "webhook"
+    address = "https://hooks.example.com/clear"
+  }
+`
+	addrClearHookWithData = `
+  address {
+    type    = "webhook"
+    address = "https://hooks.example.com/clear"
+    action  = "post"
+    data    = "{\"text\":\"{label} is {event}\"}"
+  }
+`
+)
+
+// NodePing cannot clear an address's data: "", null, false and 0 keep it, so
+// removing `data` failed the apply with "address[0].data: was null, but now
+// ...". The plan now fails instead, before anything is sent, and says what
+// to do: remove the address in one apply and add it back without data in the
+// next, which the last steps do.
+func TestAccContactResource_addressDataRemovalFailsAtPlan(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+	var snapshot string
+	withData := addrClearDataConfig(mock.URL(), addrClearHookWithData)
+	const data = `"{\"text\":\"{label} is {event}\"}"`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: withData,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					addrClearStored(mock, "data", data),
+					addrClearSnapshot(mock, &snapshot),
+				),
+			},
+			{
+				Config:      addrClearDataConfig(mock.URL(), strings.Replace(addrClearHookWithData, "    data", "    # data", 1)),
+				ExpectError: addrClearDataError,
+			},
+			{
+				// An empty string is no way round it: NodePing keeps the data.
+				Config:      addrClearDataConfig(mock.URL(), strings.Replace(addrClearHookWithData, `"{\"text\":\"{label} is {event}\"}"`, `""`, 1)),
+				ExpectError: addrClearDataError,
+			},
+			{
+				Config: withData,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					addrClearUnchanged(mock, &snapshot),
+					// Only the create: neither failed plan sent anything.
+					contactWrites(mock, 1),
+				),
+			},
+			{
+				Config: addrClearDataConfig(mock.URL(), ""),
+				Check:  resource.TestCheckResourceAttr(addrClearContact, "address.#", "1"),
+			},
+			{
+				Config: addrClearDataConfig(mock.URL(), addrClearHook),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr(addrClearContact, "address.0.data"),
+					addrClearStored(mock, "data", addrClearLeftOut),
 				),
 			},
 		},

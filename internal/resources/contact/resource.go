@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
@@ -227,7 +228,8 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 
 // ModifyPlan plans the ID of every address on an update; see
 // plannedAddressIDs. A create has no IDs to carry over and a destroy no plan.
-// It also refuses an update that removes a contact's last address.
+// It also refuses an update that removes a contact's last address, or the
+// data of an address it keeps.
 func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
@@ -256,25 +258,70 @@ func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	// with the misleading "Account must have at least one 'owner' contact."
 	// A contact created without an address is fine and can stay that way.
 	if len(planned) == 0 && len(prior) > 0 {
-		var id, name types.String
-		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &id)...)
-		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("name"), &name)...)
-		contact := "ID " + id.ValueString()
-		if name.ValueString() != "" {
-			contact = fmt.Sprintf("%q (%s)", name.ValueString(), contact)
-		}
 		resp.Diagnostics.AddAttributeError(
 			addressPath,
 			"Cannot remove a contact's last address",
 			fmt.Sprintf("The configuration removes every address of contact %s, but NodePing cannot remove a contact's last address. "+
-				"Keep at least one address block, or delete the contact and create it again.", contact),
+				"Keep at least one address block, or delete the contact and create it again.", describeContact(ctx, req.State, &resp.Diagnostics)),
 		)
 		return
 	}
 
-	for i, id := range plannedAddressIDs(prior, planned) {
+	ids := plannedAddressIDs(prior, planned)
+	for i, id := range ids {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, addressPath.AtListIndex(i).AtName("id"), id)...)
 	}
+
+	for _, i := range addressesDroppingData(prior, planned, ids) {
+		resp.Diagnostics.AddAttributeError(
+			addressPath.AtListIndex(i).AtName("data"),
+			"Cannot remove an address's data",
+			fmt.Sprintf("The configuration removes data from address[%d], a %s address of contact %s, but NodePing cannot clear an address's data: "+
+				"an update can only replace it. Remove the address block in one apply, then add it back without data in the next; "+
+				"NodePing gives it a new ID. If it is the contact's only address, add another one first: NodePing cannot remove a contact's last address.",
+				i, planned[i].Type.ValueString(), describeContact(ctx, req.State, &resp.Diagnostics)),
+		)
+	}
+}
+
+// describeContact names the contact in a plan error: by name and ID, or by
+// ID alone when it has no name.
+func describeContact(ctx context.Context, state tfsdk.State, diags *diag.Diagnostics) string {
+	var id, name types.String
+	diags.Append(state.GetAttribute(ctx, path.Root("id"), &id)...)
+	diags.Append(state.GetAttribute(ctx, path.Root("name"), &name)...)
+	contact := "ID " + id.ValueString()
+	if name.ValueString() != "" {
+		contact = fmt.Sprintf("%q (%s)", name.ValueString(), contact)
+	}
+	return contact
+}
+
+// addressesDroppingData returns the position of every planned block that
+// keeps an existing address -- its ID, from plannedAddressIDs, is known --
+// but no longer sets the data that address has. NodePing cannot clear an
+// address's data: "", null, false and 0 all keep it, and only a value such as
+// {} or " " replaces it (finding 32). Data set to "" counts as removed, as
+// it changes nothing in NodePing. A new address has nothing to clear, and
+// data not known until apply cannot be told yet; Terraform plans again then.
+func addressesDroppingData(prior, planned []AddressModel, ids []types.String) []int {
+	priorData := make(map[string]types.String, len(prior))
+	for _, old := range prior {
+		if isKnown(old.ID) {
+			priorData[old.ID.ValueString()] = old.Data
+		}
+	}
+
+	var dropping []int
+	for i, block := range planned {
+		if !isKnown(ids[i]) || block.Data.IsUnknown() {
+			continue
+		}
+		if old := priorData[ids[i].ValueString()]; old.ValueString() != "" && block.Data.ValueString() == "" {
+			dropping = append(dropping, i)
+		}
+	}
+	return dropping
 }
 
 // plannedAddressIDs decides, for each planned address block, which existing
