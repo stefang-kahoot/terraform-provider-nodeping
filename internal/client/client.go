@@ -40,6 +40,12 @@ type Client struct {
 	userAgent    string
 	defaultTags  []string
 	ignoreMute   bool
+
+	// The lists that confirm a check, contact or contact group is gone,
+	// shared for as long as the client lives. See listCache.
+	checkList        listCache
+	contactList      listCache
+	contactGroupList listCache
 }
 
 type ClientConfig struct {
@@ -98,6 +104,10 @@ func NewClient(cfg ClientConfig) *Client {
 	}
 }
 
+// WithCustomerID returns a client for the account customerID. It starts with
+// lists of its own (see listCache), as those of c may be of another account.
+// Creates through c do not drop them, which is safe while it only reads
+// objects that existed before it, as ImportState does.
 func (c *Client) WithCustomerID(customerID string) *Client {
 	return &Client{
 		httpClient:   c.httpClient,

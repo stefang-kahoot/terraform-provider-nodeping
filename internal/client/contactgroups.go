@@ -29,7 +29,7 @@ func (c *Client) GetContactGroup(ctx context.Context, id string) (*ContactGroup,
 		err = errNoID
 	}
 	if err != nil {
-		return nil, confirmGone(ctx, c.ListContactGroups, "contact group", id, fmt.Errorf("failed to get contact group: %w", err))
+		return nil, confirmGone(ctx, &c.contactGroupList, c.ListContactGroups, "contact group", id, fmt.Errorf("failed to get contact group: %w", err))
 	}
 	return &result, nil
 }
@@ -41,6 +41,9 @@ func (c *Client) CreateContactGroup(ctx context.Context, req ContactGroupCreateR
 		path:   "/contactgroups",
 		body:   req,
 	}, &result)
+	// A list sent before now may lack the new contact group, which even a failed
+	// create may have added.
+	c.contactGroupList.created()
 	if err != nil {
 		return nil, createError("contact group", req.Name, err)
 	}
@@ -73,7 +76,7 @@ func (c *Client) DeleteContactGroup(ctx context.Context, id string) error {
 		path:   "/contactgroups/" + url.PathEscape(id),
 	}, &result)
 	if err != nil {
-		return confirmGone(ctx, c.ListContactGroups, "contact group", id, fmt.Errorf("failed to delete contact group: %w", err))
+		return confirmGone(ctx, &c.contactGroupList, c.ListContactGroups, "contact group", id, fmt.Errorf("failed to delete contact group: %w", err))
 	}
 	if !result.OK {
 		return fmt.Errorf("delete contact group returned ok=false")

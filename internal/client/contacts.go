@@ -29,7 +29,7 @@ func (c *Client) GetContact(ctx context.Context, id string) (*Contact, error) {
 		err = errNoID
 	}
 	if err != nil {
-		return nil, confirmGone(ctx, c.ListContacts, "contact", id, fmt.Errorf("failed to get contact: %w", err))
+		return nil, confirmGone(ctx, &c.contactList, c.ListContacts, "contact", id, fmt.Errorf("failed to get contact: %w", err))
 	}
 	return &result, nil
 }
@@ -41,6 +41,9 @@ func (c *Client) CreateContact(ctx context.Context, req ContactCreateRequest) (*
 		path:   "/contacts",
 		body:   req,
 	}, &result)
+	// A list sent before now may lack the new contact, which even a failed
+	// create may have added.
+	c.contactList.created()
 	if err != nil {
 		return nil, createError("contact", req.Name, err)
 	}
@@ -69,7 +72,7 @@ func (c *Client) DeleteContact(ctx context.Context, id string) error {
 		path:   "/contacts/" + url.PathEscape(id),
 	}, &result)
 	if err != nil {
-		return confirmGone(ctx, c.ListContacts, "contact", id, fmt.Errorf("failed to delete contact: %w", err))
+		return confirmGone(ctx, &c.contactList, c.ListContacts, "contact", id, fmt.Errorf("failed to delete contact: %w", err))
 	}
 	if !result.OK {
 		return fmt.Errorf("delete contact returned ok=false")
