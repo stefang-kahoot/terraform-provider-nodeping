@@ -202,6 +202,7 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// Preserve computed fields from plan to avoid "inconsistent result after apply" errors
 	// These fields change on every API call but Terraform expects the planned values
 	plannedModified := plan.Modified
+	plannedState := plan.State
 	plannedTagsAll := plan.TagsAll
 	plannedPassword := plan.Password
 	plannedMute := plan.Mute
@@ -229,6 +230,14 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	// expects the value from the plan (UseStateForUnknown preserves it)
 	if !plannedModified.IsUnknown() {
 		plan.Modified = plannedModified
+	}
+
+	// NodePing answers with the check's current state, which flips whenever
+	// the check goes down or comes back up -- also after the plan was made.
+	// Keep the planned one, as for modified; the next refresh reads the real
+	// one. id, customer_id and created never change, so need no such guard.
+	if !plannedState.IsUnknown() {
+		plan.State = plannedState
 	}
 
 	// tags_all is Computed, so the applied value has to match what was planned
