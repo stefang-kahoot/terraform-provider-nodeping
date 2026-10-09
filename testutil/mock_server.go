@@ -350,31 +350,9 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 		}
 		m.checkUpdates[id] = append(m.checkUpdates[id], sent)
 
-		// NodePing ignores "tags": null on an update and keeps the check's
-		// tags; only an empty list clears them.
-		if v, ok := req["tags"]; ok && v == nil {
-			delete(req, "tags")
-		}
-
-		if label, ok := req["label"]; ok {
-			check["label"] = label
-		}
-		if enabled, ok := req["enabled"]; ok {
-			check["enable"] = enabled
-		}
-		if interval, ok := req["interval"]; ok {
-			check["interval"] = interval
-		}
-		for _, k := range checkTopLevelFields {
-			if v, ok := req[k]; ok {
-				check[k] = v
-			}
-		}
-		// The real API replaces the stored parameters with what the update
-		// sends, so an attribute removed from the config disappears from the
-		// response too. Mirroring that is what makes update round-trips
-		// meaningful to test.
-		check["parameters"] = checkParametersFrom(req)
+		// NodePing merges an update into the check: what it leaves out stays
+		// as it was. See mergeCheckUpdate.
+		mergeCheckUpdate(check, req)
 
 		m.checks[id] = check
 		w.Header().Set("Content-Type", "application/json")
