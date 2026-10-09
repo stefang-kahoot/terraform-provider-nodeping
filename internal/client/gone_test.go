@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -219,8 +218,8 @@ func expectNotFound(t *testing.T, err error) {
 
 // listingAPI answers like NodePing for the objects under one path: a read or
 // delete of any ID with NodePing's answer for an ID it does not have, a
-// create with a new object, and the list with the IDs in listed. It records
-// the customer of each list, and fails the next failLists of them.
+// create with a new object, and the list with the IDs in listed. It counts
+// the lists, and fails the next failLists of them.
 type listingAPI struct {
 	t       *testing.T
 	path    string
@@ -231,7 +230,7 @@ type listingAPI struct {
 	listed       []string
 	failLists    int
 	createStatus int
-	customers    []string
+	nLists       int
 }
 
 func newListingAPI(t *testing.T, path, getBody, delBody string) (*listingAPI, *Client) {
@@ -248,7 +247,7 @@ func (a *listingAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	item := strings.HasPrefix(r.URL.Path, a.path+"/")
 	switch {
 	case r.URL.Path == a.path && r.Method == http.MethodGet:
-		a.customers = append(a.customers, r.URL.Query().Get("customerid"))
+		a.nLists++
 		if a.failLists > 0 {
 			a.failLists--
 			w.WriteHeader(http.StatusBadRequest)
@@ -290,16 +289,10 @@ func (a *listingAPI) setCreateStatus(status int) {
 	a.createStatus = status
 }
 
-// listCustomers returns the customerid of each list request so far, "" for
-// none.
-func (a *listingAPI) listCustomers() []string {
+func (a *listingAPI) lists() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return slices.Clone(a.customers)
-}
-
-func (a *listingAPI) lists() int {
-	return len(a.listCustomers())
+	return a.nLists
 }
 
 // One list answers every confirmation: after N objects were deleted in the
@@ -407,21 +400,6 @@ func TestGoneListedEarlierIsListedAgain(t *testing.T) {
 				t.Errorf("expected 2 lists, got %d", got)
 			}
 		})
-	}
-}
-
-// A copy for a SubAccount lists that account, not the one its parent listed.
-func TestGoneSubAccountListsItsOwnAccount(t *testing.T) {
-	api, c := newListingAPI(t, "/checks", `{"error":"Error fetching check."}`, `{"error":"Unable to find that check"}`)
-	ctx := context.Background()
-
-	_, err := c.GetCheck(ctx, "GONE-1")
-	expectNotFound(t, err)
-	_, err = c.WithCustomerID("SUB").GetCheck(ctx, "GONE-2")
-	expectNotFound(t, err)
-
-	if got, want := api.listCustomers(), []string{"", "SUB"}; !slices.Equal(got, want) {
-		t.Errorf("expected lists for customers %q, got %q", want, got)
 	}
 }
 

@@ -97,6 +97,9 @@ provider "nodeping" {
 }
 ` + "```" + `
 
+A resource is imported through the provider it names, so a SubAccount's
+resources are imported by their plain ID through the SubAccount's provider.
+
 ## Default Tags
 
 You can define default tags at the provider level that will be automatically applied to all resources that support tags (e.g., checks):

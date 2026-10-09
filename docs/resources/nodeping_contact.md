@@ -153,10 +153,22 @@ Contacts can be imported using the contact ID:
 terraform import nodeping_contact.example 201205050153W2Q4C-BKPGH
 ```
 
-For SubAccount contacts, use the format `customer_id:contact_id`:
+To import a contact from a SubAccount, give the resource a provider
+configured with the SubAccount's `customer_id` and import it by its
+plain ID, as above. That provider sends the customer ID with every request,
+including the reads, updates and deletes after the import:
 
-```shell
-terraform import nodeping_contact.example 201205050153W2Q4C:201205050153W2Q4C-BKPGH
+```hcl
+provider "nodeping" {
+  alias       = "subaccount"
+  api_token   = var.nodeping_token
+  customer_id = "SUBACCOUNT_ID"
+}
+
+resource "nodeping_contact" "example" {
+  provider = nodeping.subaccount
+  # ...
+}
 ```
 
 ## Notes

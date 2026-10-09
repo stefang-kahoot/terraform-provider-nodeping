@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -16,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/importid"
 )
 
 var (
@@ -437,35 +437,18 @@ func (r *ContactResource) Delete(ctx context.Context, req resource.DeleteRequest
 }
 
 func (r *ContactResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	idParts := strings.Split(req.ID, ":")
-
-	var contactID string
-	var customerID string
-
-	if len(idParts) == 2 {
-		customerID = idParts[0]
-		contactID = idParts[1]
-	} else if len(idParts) == 1 {
-		contactID = idParts[0]
-	} else {
-		resp.Diagnostics.AddError(
-			"Invalid Import ID",
-			fmt.Sprintf("Expected import ID in format 'contact_id' or 'customer_id:contact_id', got: %s", req.ID),
-		)
+	contactID, ok := importid.Parse(req.ID, "contact", &resp.Diagnostics)
+	if !ok {
 		return
 	}
 
 	tflog.Debug(ctx, "Importing contact", map[string]interface{}{
-		"contact_id":  contactID,
-		"customer_id": customerID,
+		"contact_id": contactID,
 	})
 
-	c := r.client
-	if customerID != "" {
-		c = c.WithCustomerID(customerID)
-	}
-
-	contact, err := c.GetContact(ctx, contactID)
+	// r.client, as for every other request: a SubAccount is reached through a
+	// provider instance carrying its customer_id. See the importid package.
+	contact, err := r.client.GetContact(ctx, contactID)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error Importing Contact",
