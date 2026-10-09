@@ -13,6 +13,8 @@ type Contact struct {
 	Addresses  map[string]ContactAddress `json:"addresses,omitempty"`
 }
 
+// ContactAddress is an address as NodePing returns it. Creates and updates
+// write AddressRequest.
 type ContactAddress struct {
 	Address       string            `json:"address,omitempty"`
 	Type          string            `json:"type,omitempty"`
@@ -30,20 +32,24 @@ type ContactAddress struct {
 	Priority      *int              `json:"priority,omitempty"`
 }
 
-type NewAddress struct {
-	Address       string            `json:"address"`
-	Type          string            `json:"type"`
-	SuppressUp    bool              `json:"suppressup,omitempty"`
-	SuppressDown  bool              `json:"suppressdown,omitempty"`
-	SuppressFirst bool              `json:"suppressfirst,omitempty"`
-	SuppressDiag  bool              `json:"suppressdiag,omitempty"`
-	SuppressAll   bool              `json:"suppressall,omitempty"`
-	Mute          interface{}       `json:"mute,omitempty"`
-	Action        string            `json:"action,omitempty"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	QueryStrings  map[string]string `json:"querystrings,omitempty"`
-	Data          string            `json:"data,omitempty"`
-	Priority      *int              `json:"priority,omitempty"`
+// AddressRequest is an address as a create or an update writes it: in
+// `newaddresses` for one NodePing has yet to create, or under its ID in an
+// update's `addresses` for one it keeps.
+type AddressRequest struct {
+	Address       string `json:"address"`
+	Type          string `json:"type"`
+	SuppressUp    bool   `json:"suppressup,omitempty"`
+	SuppressDown  bool   `json:"suppressdown,omitempty"`
+	SuppressFirst bool   `json:"suppressfirst,omitempty"`
+	SuppressDiag  bool   `json:"suppressdiag,omitempty"`
+	SuppressAll   bool   `json:"suppressall,omitempty"`
+	// Mute is left out when nil, and sent as given otherwise, false included.
+	Mute         *bool             `json:"mute,omitempty"`
+	Action       string            `json:"action,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty"`
+	QueryStrings map[string]string `json:"querystrings,omitempty"`
+	Data         string            `json:"data,omitempty"`
+	Priority     *int              `json:"priority,omitempty"`
 }
 
 // ContactGroup groups contact addresses so a check can notify all of them
@@ -75,7 +81,7 @@ type ContactCreateRequest struct {
 	CustRole string `json:"custrole,omitempty"`
 	// NewAddresses is left out when empty: NodePing then creates a contact
 	// with no address, but refuses an empty list.
-	NewAddresses []NewAddress `json:"newaddresses,omitempty"`
+	NewAddresses []AddressRequest `json:"newaddresses,omitempty"`
 }
 
 type ContactUpdateRequest struct {
@@ -87,8 +93,8 @@ type ContactUpdateRequest struct {
 	// address. A nil map leaves the key out, and the addresses as they are.
 	// omitzero, unlike omitempty, tells the two apart; it also keeps a nil
 	// map from going out as null, which NodePing happens to ignore as well.
-	Addresses    map[string]ContactAddress `json:"addresses,omitzero"`
-	NewAddresses []NewAddress              `json:"newaddresses,omitempty"`
+	Addresses    map[string]AddressRequest `json:"addresses,omitzero"`
+	NewAddresses []AddressRequest          `json:"newaddresses,omitempty"`
 }
 
 type Check struct {

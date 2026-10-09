@@ -74,44 +74,11 @@ func (r *ContactResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	for _, addr := range plan.Addresses {
-		newAddr := client.NewAddress{
-			Address:       addr.Address.ValueString(),
-			Type:          addr.Type.ValueString(),
-			SuppressUp:    addr.SuppressUp.ValueBool(),
-			SuppressDown:  addr.SuppressDown.ValueBool(),
-			SuppressFirst: addr.SuppressFirst.ValueBool(),
-			SuppressDiag:  addr.SuppressDiag.ValueBool(),
-			SuppressAll:   addr.SuppressAll.ValueBool(),
-			Mute:          addr.Mute.ValueBool(),
+		newAddr, diags := addressRequest(ctx, addr, nil)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
 		}
-
-		if !addr.Action.IsNull() {
-			newAddr.Action = addr.Action.ValueString()
-		}
-		if !addr.Data.IsNull() {
-			newAddr.Data = addr.Data.ValueString()
-		}
-		if !addr.Priority.IsNull() {
-			priority := int(addr.Priority.ValueInt64())
-			newAddr.Priority = &priority
-		}
-		if !addr.Headers.IsNull() {
-			headers := make(map[string]string)
-			resp.Diagnostics.Append(addr.Headers.ElementsAs(ctx, &headers, false)...)
-			if resp.Diagnostics.HasError() {
-				return
-			}
-			newAddr.Headers = headers
-		}
-		if !addr.QueryStrings.IsNull() {
-			qs := make(map[string]string)
-			resp.Diagnostics.Append(addr.QueryStrings.ElementsAs(ctx, &qs, false)...)
-			if resp.Diagnostics.HasError() {
-				return
-			}
-			newAddr.QueryStrings = qs
-		}
-
 		createReq.NewAddresses = append(createReq.NewAddresses, newAddr)
 	}
 
@@ -198,10 +165,10 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 		CustRole: plan.CustRole.ValueString(),
 	}
 
-	existingAddressIDs := make(map[string]bool)
+	priorAddresses := make(map[string]AddressModel, len(state.Addresses))
 	for _, addr := range state.Addresses {
-		if !addr.ID.IsNull() && !addr.ID.IsUnknown() {
-			existingAddressIDs[addr.ID.ValueString()] = true
+		if isKnown(addr.ID) {
+			priorAddresses[addr.ID.ValueString()] = addr
 		}
 	}
 
@@ -211,92 +178,26 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 	// (ModifyPlan refuses to remove the last one), and NodePing refuses an
 	// empty collection that would leave a contact without an address.
 	if len(plan.Addresses) > 0 {
-		updateReq.Addresses = make(map[string]client.ContactAddress)
+		updateReq.Addresses = make(map[string]client.AddressRequest)
 	}
 	for _, addr := range plan.Addresses {
-		if !addr.ID.IsNull() && !addr.ID.IsUnknown() && existingAddressIDs[addr.ID.ValueString()] {
-			addrUpdate := client.ContactAddress{
-				Address:       addr.Address.ValueString(),
-				Type:          addr.Type.ValueString(),
-				SuppressUp:    addr.SuppressUp.ValueBool(),
-				SuppressDown:  addr.SuppressDown.ValueBool(),
-				SuppressFirst: addr.SuppressFirst.ValueBool(),
-				SuppressDiag:  addr.SuppressDiag.ValueBool(),
-				SuppressAll:   addr.SuppressAll.ValueBool(),
+		var prior *AddressModel
+		if isKnown(addr.ID) {
+			if old, ok := priorAddresses[addr.ID.ValueString()]; ok {
+				prior = &old
 			}
+		}
 
-			if addr.Mute.ValueBool() {
-				addrUpdate.Mute = []byte("true")
-			}
+		sent, diags := addressRequest(ctx, addr, prior)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
 
-			if !addr.Action.IsNull() {
-				addrUpdate.Action = addr.Action.ValueString()
-			}
-			if !addr.Data.IsNull() {
-				addrUpdate.Data = addr.Data.ValueString()
-			}
-			if !addr.Priority.IsNull() {
-				priority := int(addr.Priority.ValueInt64())
-				addrUpdate.Priority = &priority
-			}
-			if !addr.Headers.IsNull() {
-				headers := make(map[string]string)
-				resp.Diagnostics.Append(addr.Headers.ElementsAs(ctx, &headers, false)...)
-				if resp.Diagnostics.HasError() {
-					return
-				}
-				addrUpdate.Headers = headers
-			}
-			if !addr.QueryStrings.IsNull() {
-				qs := make(map[string]string)
-				resp.Diagnostics.Append(addr.QueryStrings.ElementsAs(ctx, &qs, false)...)
-				if resp.Diagnostics.HasError() {
-					return
-				}
-				addrUpdate.QueryStrings = qs
-			}
-
-			updateReq.Addresses[addr.ID.ValueString()] = addrUpdate
+		if prior != nil {
+			updateReq.Addresses[addr.ID.ValueString()] = sent
 		} else {
-			newAddr := client.NewAddress{
-				Address:       addr.Address.ValueString(),
-				Type:          addr.Type.ValueString(),
-				SuppressUp:    addr.SuppressUp.ValueBool(),
-				SuppressDown:  addr.SuppressDown.ValueBool(),
-				SuppressFirst: addr.SuppressFirst.ValueBool(),
-				SuppressDiag:  addr.SuppressDiag.ValueBool(),
-				SuppressAll:   addr.SuppressAll.ValueBool(),
-				Mute:          addr.Mute.ValueBool(),
-			}
-
-			if !addr.Action.IsNull() {
-				newAddr.Action = addr.Action.ValueString()
-			}
-			if !addr.Data.IsNull() {
-				newAddr.Data = addr.Data.ValueString()
-			}
-			if !addr.Priority.IsNull() {
-				priority := int(addr.Priority.ValueInt64())
-				newAddr.Priority = &priority
-			}
-			if !addr.Headers.IsNull() {
-				headers := make(map[string]string)
-				resp.Diagnostics.Append(addr.Headers.ElementsAs(ctx, &headers, false)...)
-				if resp.Diagnostics.HasError() {
-					return
-				}
-				newAddr.Headers = headers
-			}
-			if !addr.QueryStrings.IsNull() {
-				qs := make(map[string]string)
-				resp.Diagnostics.Append(addr.QueryStrings.ElementsAs(ctx, &qs, false)...)
-				if resp.Diagnostics.HasError() {
-					return
-				}
-				newAddr.QueryStrings = qs
-			}
-
-			updateReq.NewAddresses = append(updateReq.NewAddresses, newAddr)
+			updateReq.NewAddresses = append(updateReq.NewAddresses, sent)
 		}
 	}
 
