@@ -160,3 +160,17 @@ func copyObject(v interface{}) map[string]interface{} {
 	}
 	return out
 }
+
+// SetCheckParameter sets one of a check's parameters the way someone editing
+// it in the NodePing web interface would: behind Terraform's back.
+func (m *MockNodePingServer) SetCheckParameter(id, key string, value interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	check, ok := m.checks[id]
+	if !ok {
+		return
+	}
+	params := copyObject(check["parameters"])
+	params[key] = value
+	check["parameters"] = params
+}

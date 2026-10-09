@@ -211,6 +211,16 @@ type RedisHost struct {
 	Password string `json:"password,omitempty"`
 }
 
+// CheckCreateRequest is a check as sent to NodePing, on create and, inside
+// CheckUpdateRequest, on update.
+//
+// NodePing merges an update into the check: whatever it leaves out keeps its
+// stored value. Removing a value therefore means sending the one that clears
+// it, and for some attributes that is an empty value omitempty would drop.
+// Those fields are typed to carry it: a pointer is left out when nil and sent
+// when set, "" included; an interface{} is left out only when nil, so it can
+// carry false or "". The check resource's clearRemoved says which value
+// clears what.
 type CheckCreateRequest struct {
 	Type           string                   `json:"type"`
 	Target         string                   `json:"target,omitempty"`
@@ -219,38 +229,38 @@ type CheckCreateRequest struct {
 	Enabled        string                   `json:"enabled,omitempty"`
 	Public         interface{}              `json:"public,omitempty"`
 	AutoDiag       interface{}              `json:"autodiag,omitempty"`
-	RunLocations   interface{}              `json:"runlocations,omitempty"`
+	RunLocations   interface{}              `json:"runlocations,omitempty"` // [] clears them
 	HomeLoc        interface{}              `json:"homeloc,omitempty"`
 	Threshold      interface{}              `json:"threshold,omitempty"`
 	Sens           interface{}              `json:"sens,omitempty"`
 	Notifications  []map[string]interface{} `json:"notifications,omitempty"`
-	Dep            interface{}              `json:"dep,omitempty"`
+	Dep            interface{}              `json:"dep,omitempty"` // a check ID, or false to remove the dependency
 	Mute           interface{}              `json:"mute,omitempty"`
 	Description    string                   `json:"description,omitempty"`
 	Tags           []string                 `json:"tags,omitempty"`
-	ContentString  string                   `json:"contentstring,omitempty"`
-	Regex          interface{}              `json:"regex,omitempty"`
-	Invert         interface{}              `json:"invert,omitempty"`
-	Follow         interface{}              `json:"follow,omitempty"`
-	Method         string                   `json:"method,omitempty"`
-	StatusCode     interface{}              `json:"statuscode,omitempty"`
+	ContentString  *string                  `json:"contentstring,omitempty"` // "" clears it
+	Regex          interface{}              `json:"regex,omitempty"`         // false clears it
+	Invert         interface{}              `json:"invert,omitempty"`        // false clears it
+	Follow         interface{}              `json:"follow,omitempty"`        // false clears it
+	Method         *string                  `json:"method,omitempty"`        // "" clears it
+	StatusCode     interface{}              `json:"statuscode,omitempty"`    // a number, or "" to clear it
 	SendHeaders    map[string]string        `json:"sendheaders,omitempty"`
 	ReceiveHeaders map[string]string        `json:"receiveheaders,omitempty"`
 	Data           interface{}              `json:"data,omitempty"`
-	PostData       string                   `json:"postdata,omitempty"`
+	PostData       *string                  `json:"postdata,omitempty"` // "" clears it
 	Port           interface{}              `json:"port,omitempty"`
 	Username       string                   `json:"username,omitempty"`
 	Password       string                   `json:"password,omitempty"`
 	Secure         interface{}              `json:"secure,omitempty"`
 	Verify         interface{}              `json:"verify,omitempty"`
-	IPv6           interface{}              `json:"ipv6,omitempty"`
+	IPv6           interface{}              `json:"ipv6,omitempty"` // false clears it
 	DNSType        string                   `json:"dnstype,omitempty"`
 	DNSToResolve   string                   `json:"dnstoresolve,omitempty"`
 	DNSSection     string                   `json:"dnssection,omitempty"`
 	DNSRD          interface{}              `json:"dnsrd,omitempty"`
 	Transport      string                   `json:"transport,omitempty"`
-	WarningDays    interface{}              `json:"warningdays,omitempty"`
-	ServerName     string                   `json:"servername,omitempty"`
+	WarningDays    interface{}              `json:"warningdays,omitempty"` // a number, or "" to clear it
+	ServerName     *string                  `json:"servername,omitempty"`  // "" clears it
 	Email          string                   `json:"email,omitempty"`
 	Database       string                   `json:"database,omitempty"`
 	Query          string                   `json:"query,omitempty"`

@@ -294,6 +294,27 @@ resource "nodeping_check" "service" {
 - `verifyvolume` - (Optional) Enable the volume detection feature. `AUDIO` checks only.
 - `volumemin` - (Optional) Minimum acceptable volume threshold in dB, used by the volume detection feature. Range: `-90` to `0`. `AUDIO` checks only.
 
+## Removing an Argument
+
+NodePing keeps whatever an update leaves out, so removing an argument from the
+configuration has to clear it in NodePing explicitly. The provider sends the
+value NodePing stores as cleared, and only for a value the check has:
+
+- `contentstring`, `method`, `postdata`, `servername`, `statuscode` and
+  `warningdays` are cleared to an empty value.
+- `regex`, `invert`, `follow` and `ipv6` are set to `false`. Once set, NodePing
+  keeps these as `false` rather than dropping them. A refresh reads a stored
+  `false` as unset when the configuration leaves the argument out. An import
+  has no configuration to go by and reads it as `false`, so a configuration
+  that imports such a check without a plan says `follow = false`.
+- `dep` is removed.
+- `runlocations` is emptied.
+
+Removing any other argument (`homeloc`, `port`, `username`, `secure`,
+`verify`, the `dns*`, `snmp*` and database arguments, ...) has not been tried
+against NodePing and is not cleared: NodePing keeps the value, and the apply
+fails with "Provider produced inconsistent result after apply".
+
 ## Attribute Reference
 
 - `id` - The unique identifier of the check.

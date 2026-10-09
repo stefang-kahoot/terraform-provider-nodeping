@@ -1,0 +1,236 @@
+package check
+
+import (
+	"context"
+	"encoding/json"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+)
+
+// requestJSON returns the top-level keys of a request as sent, with their
+// JSON values.
+func requestJSON(t *testing.T, req any) map[string]string {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out := make(map[string]string, len(raw))
+	for k, v := range raw {
+		out[k] = string(v)
+	}
+	return out
+}
+
+// clearable lists the attributes clearRemoved clears, set to a value each, as
+// a state or plan would hold them.
+func clearable() *CheckResourceModel {
+	return &CheckResourceModel{
+		Type:          types.StringValue("HTTPADV"),
+		Target:        types.StringValue("https://example.com"),
+		ContentString: types.StringValue("Example"),
+		Method:        types.StringValue("POST"),
+		PostData:      types.StringValue("probe=1"),
+		ServerName:    types.StringValue("example.com"),
+		StatusCode:    types.Int64Value(201),
+		WarningDays:   types.Int64Value(21),
+		Regex:         types.BoolValue(true),
+		Invert:        types.BoolValue(true),
+		Follow:        types.BoolValue(true),
+		IPv6:          types.BoolValue(true),
+		Dep:           types.StringValue("CHECK-1"),
+		RunLocations:  types.ListValueMust(types.StringType, []attr.Value{types.StringValue("nam")}),
+	}
+}
+
+// unset is a plan or state without any of them.
+func unset() *CheckResourceModel {
+	return &CheckResourceModel{
+		Type:   types.StringValue("HTTPADV"),
+		Target: types.StringValue("https://example.com"),
+	}
+}
+
+var clearableKeys = []string{
+	"contentstring", "method", "postdata", "servername", "statuscode", "warningdays",
+	"regex", "invert", "follow", "ipv6", "dep", "runlocations",
+}
+
+func TestBuildUpdateRequestClearsRemovedValues(t *testing.T) {
+	t.Parallel()
+
+	emptied := unset()
+	emptied.ContentString = types.StringValue("")
+	emptied.Method = types.StringNull()
+	emptied.PostData = types.StringValue("")
+	emptied.ServerName = types.StringValue("")
+	emptied.Regex = types.BoolValue(false)
+	emptied.Dep = types.StringValue("")
+	emptied.RunLocations = types.ListValueMust(types.StringType, []attr.Value{})
+
+	setFalse := unset()
+	setFalse.Regex = types.BoolValue(false)
+	setFalse.Invert = types.BoolValue(false)
+	setFalse.Follow = types.BoolValue(false)
+	setFalse.IPv6 = types.BoolValue(false)
+
+	tests := []struct {
+		name        string
+		state, plan *CheckResourceModel
+		want        map[string]string
+	}{
+		{
+			name:  "removed values are sent as the value that clears each",
+			state: clearable(),
+			plan:  unset(),
+			want: map[string]string{
+				"contentstring": `""`, "method": `""`, "postdata": `""`, "servername": `""`,
+				"statuscode": `""`, "warningdays": `""`,
+				"regex": `false`, "invert": `false`, "follow": `false`, "ipv6": `false`,
+				"dep": `false`, "runlocations": `[]`,
+			},
+		},
+		{
+			name:  "emptied values are cleared too",
+			state: clearable(),
+			plan:  emptied,
+			want: map[string]string{
+				"contentstring": `""`, "method": `""`, "postdata": `""`, "servername": `""`,
+				"statuscode": `""`, "warningdays": `""`,
+				"regex": `false`, "invert": `false`, "follow": `false`, "ipv6": `false`,
+				"dep": `false`, "runlocations": `[]`,
+			},
+		},
+		{
+			name:  "values a check never had are left out",
+			state: unset(),
+			plan:  unset(),
+			want:  map[string]string{},
+		},
+		{
+			name:  "a configured value is sent as configured",
+			state: unset(),
+			plan:  clearable(),
+			want: map[string]string{
+				"contentstring": `"Example"`, "method": `"POST"`, "postdata": `"probe=1"`, "servername": `"example.com"`,
+				"statuscode": `201`, "warningdays": `21`,
+				"regex": `true`, "invert": `true`, "follow": `true`, "ipv6": `true`,
+				"dep": `"CHECK-1"`, "runlocations": `["nam"]`,
+			},
+		},
+		{
+			name:  "a configured false is sent",
+			state: clearable(),
+			plan:  setFalse,
+			want: map[string]string{
+				"contentstring": `""`, "method": `""`, "postdata": `""`, "servername": `""`,
+				"statuscode": `""`, "warningdays": `""`,
+				"regex": `false`, "invert": `false`, "follow": `false`, "ipv6": `false`,
+				"dep": `false`, "runlocations": `[]`,
+			},
+		},
+		{
+			// NodePing already holds false, which reads back as unset.
+			name:  "a false removed is not sent",
+			state: setFalse,
+			plan:  unset(),
+			want:  map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := &CheckResource{}
+			var diags diag.Diagnostics
+			req := r.buildUpdateRequest(context.Background(), tt.plan, tt.state, &diags)
+			if diags.HasError() {
+				t.Fatalf("building the request raised %v", diags.Errors())
+			}
+
+			sent := requestJSON(t, req)
+			for _, key := range clearableKeys {
+				got, ok := sent[key]
+				want, wantSent := tt.want[key]
+				switch {
+				case ok && !wantSent:
+					t.Errorf("%s = %s sent, want it left out", key, got)
+				case !ok && wantSent:
+					t.Errorf("%s left out, want %s", key, want)
+				case got != want:
+					t.Errorf("%s = %s, want %s", key, got, want)
+				}
+			}
+		})
+	}
+}
+
+// A create has no prior state, so nothing it leaves unset is sent.
+func TestBuildCreateRequestLeavesUnsetValuesOut(t *testing.T) {
+	t.Parallel()
+
+	r := &CheckResource{}
+	var diags diag.Diagnostics
+	emptied := unset()
+	emptied.ContentString = types.StringValue("")
+	emptied.RunLocations = types.ListValueMust(types.StringType, []attr.Value{})
+
+	for _, model := range []*CheckResourceModel{unset(), emptied} {
+		sent := requestJSON(t, r.buildCreateRequest(context.Background(), model, &diags))
+		var got []string
+		for _, key := range clearableKeys {
+			if _, ok := sent[key]; ok {
+				got = append(got, key)
+			}
+		}
+		if len(got) > 0 {
+			sort.Strings(got)
+			t.Errorf("a create sent %s", strings.Join(got, ", "))
+		}
+	}
+}
+
+func TestKeep(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		holds         modelHolds
+		current, from attr.Value
+		want          attr.Value
+	}{
+		{"NodePing's value beats the plan's", thePlan, types.BoolValue(true), types.BoolValue(false), types.BoolValue(false)},
+		{"NodePing's value beats a planned null", thePlan, types.BoolNull(), types.BoolValue(true), types.BoolValue(true)},
+		{"a planned value NodePing leaves out stays", thePlan, types.StringValue("x"), types.StringNull(), types.StringValue("x")},
+		{"a removed boolean stays removed", thePlan, types.BoolNull(), types.BoolValue(false), types.BoolNull()},
+		{"a removed list stays removed", thePlan, types.ListNull(types.StringType), types.ListValueMust(types.StringType, []attr.Value{}), types.ListNull(types.StringType)},
+		{"a planned empty string stays", thePlan, types.StringValue(""), types.StringNull(), types.StringValue("")},
+		{"a planned false stays", thePlan, types.BoolValue(false), types.BoolValue(false), types.BoolValue(false)},
+		{"an unknown takes NodePing's null", thePlan, types.StringUnknown(), types.StringNull(), types.StringNull()},
+		{"an unknown takes NodePing's empty value", thePlan, types.BoolUnknown(), types.BoolValue(false), types.BoolValue(false)},
+		{"a refresh reads a stored false as unset", thePriorState, types.BoolNull(), types.BoolValue(false), types.BoolNull()},
+		{"a refresh keeps a false", thePriorState, types.BoolValue(false), types.BoolValue(false), types.BoolValue(false)},
+		{"a refresh reads a change", thePriorState, types.BoolValue(true), types.BoolValue(false), types.BoolValue(false)},
+		{"an import reads a stored false as false", nothing, types.BoolNull(), types.BoolValue(false), types.BoolValue(false)},
+		{"an import reads an empty list as NodePing has it", nothing, types.ListNull(types.StringType), types.ListNull(types.StringType), types.ListNull(types.StringType)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := keep(tt.holds, tt.current, tt.from); !got.Equal(tt.want) {
+				t.Errorf("keep(%v, %s, %s) = %s, want %s", tt.holds, tt.current, tt.from, got, tt.want)
+			}
+		})
+	}
+}
