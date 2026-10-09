@@ -313,6 +313,10 @@ value NodePing stores as cleared, and only for a value the check has:
   NodePing merges these per header, so the provider names each removed one.
 - `notifications`: an update always sends the whole list, which NodePing
   replaces, so removing the last block removes the last notification.
+- `description`: NodePing ignores an empty description, so nothing clears
+  one; it can only be overwritten. The provider overwrites it with a single
+  space, which the resource, the data sources and an import all read as no
+  description.
 
 Removing any other argument (`homeloc`, `port`, `username`, `secure`,
 `verify`, the `dns*`, `snmp*` and database arguments, ...) has not been tried

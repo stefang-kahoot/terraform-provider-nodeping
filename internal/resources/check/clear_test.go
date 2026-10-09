@@ -336,3 +336,36 @@ func TestBuildUpdateRequestAlwaysSendsNotifications(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildUpdateRequestClearsTheDescription(t *testing.T) {
+	t.Parallel()
+
+	described := func(d types.String) *CheckResourceModel {
+		m := unset()
+		m.Description = d
+		return m
+	}
+
+	tests := []struct {
+		name          string
+		before, after types.String
+		want          string
+	}{
+		{"removed", types.StringValue("text"), types.StringNull(), `" "`},
+		{"emptied", types.StringValue("text"), types.StringValue(""), `" "`},
+		{"changed", types.StringValue("text"), types.StringValue("other"), `"other"`},
+		{"never had one", types.StringNull(), types.StringNull(), ``},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := &CheckResource{}
+			var diags diag.Diagnostics
+			req := r.buildUpdateRequest(context.Background(), described(tt.after), described(tt.before), &diags)
+			if got := requestJSON(t, req)["description"]; got != tt.want {
+				t.Errorf("description = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}

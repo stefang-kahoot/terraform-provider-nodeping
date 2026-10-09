@@ -236,7 +236,7 @@ type CheckCreateRequest struct {
 	Notifications  []map[string]interface{} `json:"notifications,omitempty"`
 	Dep            interface{}              `json:"dep,omitempty"` // a check ID, or false to remove the dependency
 	Mute           interface{}              `json:"mute,omitempty"`
-	Description    string                   `json:"description,omitempty"`
+	Description    string                   `json:"description,omitempty"` // " " clears it; NodePing ignores "", null, false and 0
 	Tags           []string                 `json:"tags,omitempty"`
 	ContentString  *string                  `json:"contentstring,omitempty"`  // "" clears it
 	Regex          interface{}              `json:"regex,omitempty"`          // false clears it

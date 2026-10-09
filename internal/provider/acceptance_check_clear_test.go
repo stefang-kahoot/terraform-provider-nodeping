@@ -387,3 +387,55 @@ resource "nodeping_check" "test" {
 		},
 	})
 }
+
+// NodePing ignores a description of "", null, false or 0, so a description
+// can only be overwritten. The provider clears one by writing a single space,
+// and reads that back as no description.
+func TestAccCheckResource_clearsTheDescription(t *testing.T) {
+	testClearRemoved(t, clearCase{
+		name: "description", typ: "HTTP", set: `description = "Who to call when this fails"`,
+		attribute: "description", where: "top", key: "description", cleared: `" "`,
+	})
+}
+
+// A check whose description was cleared imports without one.
+func TestAccCheckResource_importReadsAClearedDescriptionAsNone(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	mock.AddCheck("CLEARED", map[string]interface{}{
+		"_id":         "CLEARED",
+		"type":        "HTTP",
+		"label":       "acc-cleared-description",
+		"enable":      "active",
+		"interval":    15,
+		"description": " ",
+		"parameters": map[string]interface{}{
+			"target":    "https://example.com/health",
+			"threshold": 5,
+			"sens":      2,
+		},
+	})
+
+	config := providerConfig(mock.URL()) + `
+resource "nodeping_check" "imported" {
+  type    = "HTTP"
+  target  = "https://example.com/health"
+  label   = "acc-cleared-description"
+  enabled = true
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config:          config,
+				ResourceName:    "nodeping_check.imported",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithID,
+				ImportStateId:   "CLEARED",
+			},
+		},
+	})
+}

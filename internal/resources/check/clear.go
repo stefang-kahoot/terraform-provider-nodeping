@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/checkattr"
 )
 
 // buildUpdateRequest builds the update of a check from its plan, and from its
@@ -42,6 +43,9 @@ func (r *CheckResource) buildUpdateRequest(ctx context.Context, plan, state *Che
 //   - sendheaders, receiveheaders: each removed header as null. NodePing
 //     merges headers per name, so a smaller map, {} or none at all would
 //     keep every header.
+//   - description: " ". NodePing ignores "", null, false and 0, so nothing
+//     clears a description; it can only be overwritten, and a single space
+//     reads back as none (checkattr.ClearedDescription).
 //
 // The other attributes have not been probed and are left out as before, so
 // removing one still keeps its value at NodePing.
@@ -58,6 +62,10 @@ func clearRemoved(req *client.CheckCreateRequest, plan, state *CheckResourceMode
 		if removed(s.prior, s.planned) {
 			*s.field = new(string)
 		}
+	}
+
+	if removed(state.Description, plan.Description) {
+		req.Description = checkattr.ClearedDescription
 	}
 
 	for _, v := range []struct {
