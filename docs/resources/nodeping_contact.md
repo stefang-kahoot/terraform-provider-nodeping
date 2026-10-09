@@ -121,7 +121,7 @@ The `address` block supports the following arguments:
 - `suppress_first` - (Optional) Suppress "first result" notifications. Defaults to `false`.
 - `suppress_diag` - (Optional) Suppress diagnostic notifications. Defaults to `false`.
 - `suppress_all` - (Optional) Suppress all notifications. Defaults to `false`.
-- `mute` - (Optional) Mute all notifications to this address. Defaults to `false`.
+- `mute` - (Optional) Mute all notifications to this address. Defaults to `false`. With the provider's `ignore_mute` set, an address block that leaves `mute` out has its mute left to NodePing: Terraform neither plans nor sends it, so a mute set in the NodePing web interface stays. A new address starts unmuted.
 
 #### Webhook-Specific Arguments
 

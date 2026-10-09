@@ -117,9 +117,9 @@ resource "nodeping_check" "example" {
 
 The resulting check will have tags: ` + "`[\"managed-by-terraform\", \"team-devops\", \"production\"]`" + `. Duplicate tags are automatically removed.
 
-## Muting Checks in NodePing
+## Muting in NodePing
 
-Set ` + "`ignore_mute`" + ` when checks are muted and unmuted in the NodePing web interface rather than in Terraform:
+Set ` + "`ignore_mute`" + ` when checks and contact addresses are muted and unmuted in the NodePing web interface rather than in Terraform:
 
 ` + "```hcl" + `
 provider "nodeping" {
@@ -128,7 +128,7 @@ provider "nodeping" {
 }
 ` + "```" + `
 
-Terraform then leaves ` + "`mute`" + ` alone on every check whose configuration does not set it: a plan never changes it, and an update does not send it, so a check muted in NodePing stays muted, even if it was muted after the plan was made. A check that sets ` + "`mute`" + ` itself is still managed. A new check starts unmuted.
+Terraform then leaves ` + "`mute`" + ` alone on every check, and every contact ` + "`address`" + ` block, whose configuration does not set it: a plan never changes it, and an update does not send it, so a check or address muted in NodePing stays muted, even if it was muted after the plan was made. A check or address that sets ` + "`mute`" + ` itself is still managed. A new check or address starts unmuted.
 `,
 		Attributes: map[string]schema.Attribute{
 			"api_token": schema.StringAttribute{
@@ -170,8 +170,8 @@ Terraform then leaves ` + "`mute`" + ` alone on every check whose configuration 
 				ElementType:         types.StringType,
 			},
 			"ignore_mute": schema.BoolAttribute{
-				Description:         "Leave mute to NodePing on every check whose configuration does not set it: a plan never changes it and an update does not send it, so a check muted or unmuted in the NodePing web interface stays that way. A check that sets mute is still managed. Defaults to false.",
-				MarkdownDescription: "Leave `mute` to NodePing on every check whose configuration does not set it: a plan never changes it and an update does not send it, so a check muted or unmuted in the NodePing web interface stays that way. A check that sets `mute` is still managed. Defaults to `false`.",
+				Description:         "Leave mute to NodePing on every check and contact address whose configuration does not set it: a plan never changes it and an update does not send it, so a check or address muted or unmuted in the NodePing web interface stays that way. A check or address that sets mute is still managed. Defaults to false.",
+				MarkdownDescription: "Leave `mute` to NodePing on every check and contact address whose configuration does not set it: a plan never changes it and an update does not send it, so a check or address muted or unmuted in the NodePing web interface stays that way. A check or address that sets `mute` is still managed. Defaults to `false`.",
 				Optional:            true,
 			},
 		},

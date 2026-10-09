@@ -15,7 +15,8 @@ import (
 //
 // prior is the address as the prior state holds it, when the update keeps it
 // under its ID in `addresses`. It is nil for an address NodePing has yet to
-// create, in `newaddresses`.
+// create, in `newaddresses`. muteIgnored is whether the provider's
+// ignore_mute leaves the address's mute to NodePing; see ignoredMutes.
 //
 // NodePing merges an update into an existing address field by field, keeping
 // whatever the update leaves out, so what the configuration no longer sets
@@ -23,7 +24,7 @@ import (
 // and headers or query strings the prior state had and the plan has not go
 // out as {}. A new address leaves out what is unset. Data cannot be cleared
 // at all; ModifyPlan refuses to remove it.
-func addressRequest(ctx context.Context, addr AddressModel, prior *AddressModel) (client.AddressRequest, diag.Diagnostics) {
+func addressRequest(ctx context.Context, addr AddressModel, prior *AddressModel, muteIgnored bool) (client.AddressRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	priorHeaders := types.MapNull(types.StringType)
@@ -42,9 +43,11 @@ func addressRequest(ctx context.Context, addr AddressModel, prior *AddressModel)
 		SuppressAll:   suppressFlag(addr.SuppressAll, prior),
 	}
 
-	// A new address sends mute either way, an existing one only when true:
-	// an update cannot unmute an address. Muting is left to the web UI.
-	if mute := addr.Mute.ValueBool(); prior == nil || mute {
+	// Mute is sent as planned, false included, so an update can unmute an
+	// address. An existing address whose mute is left to NodePing leaves it
+	// out, and NodePing keeps the mute it holds, even one set after the plan
+	// was made. A new address always sends it, so it starts as planned.
+	if mute := addr.Mute.ValueBool(); prior == nil || !muteIgnored {
 		req.Mute = &mute
 	}
 

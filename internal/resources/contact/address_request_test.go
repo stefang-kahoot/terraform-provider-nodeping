@@ -57,9 +57,9 @@ func everySet(t *testing.T) AddressModel {
 
 // addressRequestJSON is what a create or update sends for the block: as a new
 // address when prior is nil, as the existing address prior otherwise.
-func addressRequestJSON(t *testing.T, addr AddressModel, prior *AddressModel) string {
+func addressRequestJSON(t *testing.T, addr AddressModel, prior *AddressModel, muteIgnored bool) string {
 	t.Helper()
-	req, diags := addressRequest(context.Background(), addr, prior)
+	req, diags := addressRequest(context.Background(), addr, prior, muteIgnored)
 	if diags.HasError() {
 		t.Fatalf("addressRequest: %v", diags)
 	}
@@ -84,8 +84,8 @@ func TestAddressRequest(t *testing.T) {
 	const (
 		hook        = `"address":"https://hooks.example.com/one","type":"webhook"`
 		flagsOff    = `"suppressup":false,"suppressdown":false,"suppressfirst":false,"suppressdiag":false,"suppressall":false`
-		allCleared  = `{` + hook + `,` + flagsOff + `,"headers":{},"querystrings":{}}`
-		nothingSent = `{` + hook + `,` + flagsOff + `}`
+		allCleared  = `{` + hook + `,` + flagsOff + `,"mute":false,"headers":{},"querystrings":{}}`
+		nothingSent = `{` + hook + `,` + flagsOff + `,"mute":false}`
 	)
 
 	email := addressBlock("email", "a@example.com")
@@ -94,12 +94,15 @@ func TestAddressRequest(t *testing.T) {
 	emptyMaps.Headers = stringMapValue(t, map[string]string{})
 	emptyMaps.QueryStrings = stringMapValue(t, map[string]string{})
 	priorEverySet := everySet(t)
+	muted := email
+	muted.Mute = types.BoolValue(true)
 
 	tests := []struct {
-		name  string
-		addr  AddressModel
-		prior *AddressModel
-		want  string
+		name        string
+		addr        AddressModel
+		prior       *AddressModel
+		muteIgnored bool
+		want        string
 	}{
 		{
 			name: "a new address leaves out what is unset, but sends mute",
@@ -107,14 +110,14 @@ func TestAddressRequest(t *testing.T) {
 			want: `{"address":"a@example.com","type":"email","mute":false}`,
 		},
 		{
-			name:  "an existing address sends every suppress flag, and mute only when true",
+			name:  "an existing address sends every suppress flag and mute",
 			addr:  email,
 			prior: &email,
-			want:  `{"address":"a@example.com","type":"email",` + flagsOff + `}`,
+			want:  `{"address":"a@example.com","type":"email",` + flagsOff + `,"mute":false}`,
 		},
 		{
-			// Finding 32: left out, NodePing kept the flags, headers and
-			// query strings.
+			// Findings 32 and 8: left out, NodePing kept the flags, the
+			// mute, the headers and the query strings.
 			name:  "an existing address clears what the plan removed",
 			addr:  bare,
 			prior: &priorEverySet,
@@ -148,13 +151,33 @@ func TestAddressRequest(t *testing.T) {
 			addr: emptyMaps,
 			want: `{` + hook + `,"mute":false}`,
 		},
+		{
+			name:        "an existing address whose mute is left to NodePing leaves it out",
+			addr:        email,
+			prior:       &muted,
+			muteIgnored: true,
+			want:        `{"address":"a@example.com","type":"email",` + flagsOff + `}`,
+		},
+		{
+			name:        "an existing address leaves out a mute left to NodePing that is planned true",
+			addr:        muted,
+			prior:       &muted,
+			muteIgnored: true,
+			want:        `{"address":"a@example.com","type":"email",` + flagsOff + `}`,
+		},
+		{
+			name:        "a new address sends its mute even when ignore_mute leaves it to NodePing",
+			addr:        email,
+			muteIgnored: true,
+			want:        `{"address":"a@example.com","type":"email","mute":false}`,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := addressRequestJSON(t, tt.addr, tt.prior); got != tt.want {
+			if got := addressRequestJSON(t, tt.addr, tt.prior, tt.muteIgnored); got != tt.want {
 				t.Errorf("sent\n  %s\nwant\n  %s", got, tt.want)
 			}
 		})

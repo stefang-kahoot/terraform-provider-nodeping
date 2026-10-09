@@ -75,7 +75,7 @@ func (r *ContactResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	for _, addr := range plan.Addresses {
-		newAddr, diags := addressRequest(ctx, addr, nil)
+		newAddr, diags := addressRequest(ctx, addr, nil, false)
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -166,6 +166,11 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 		CustRole: plan.CustRole.ValueString(),
 	}
 
+	ignored := r.ignoredMutes(ctx, req.Config, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	priorAddresses := make(map[string]AddressModel, len(state.Addresses))
 	for _, addr := range state.Addresses {
 		if isKnown(addr.ID) {
@@ -181,7 +186,7 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 	if len(plan.Addresses) > 0 {
 		updateReq.Addresses = make(map[string]client.AddressRequest)
 	}
-	for _, addr := range plan.Addresses {
+	for i, addr := range plan.Addresses {
 		var prior *AddressModel
 		if isKnown(addr.ID) {
 			if old, ok := priorAddresses[addr.ID.ValueString()]; ok {
@@ -189,7 +194,7 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 			}
 		}
 
-		sent, diags := addressRequest(ctx, addr, prior)
+		sent, diags := addressRequest(ctx, addr, prior, muteIgnoredAt(ignored, i))
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
 			return
@@ -214,10 +219,12 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 	plan.ID = types.StringValue(contact.ID)
 	plan.CustomerID = types.StringValue(contact.CustomerID)
 
-	plan.Addresses = mapAddressesToModel(ctx, contact.Addresses, plan.Addresses, &resp.Diagnostics)
+	planned := plan.Addresses
+	plan.Addresses = mapAddressesToModel(ctx, contact.Addresses, planned, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	keepIgnoredMutes(plan.Addresses, planned, ignored)
 
 	tflog.Debug(ctx, "Updated contact", map[string]interface{}{
 		"id": contact.ID,
@@ -229,7 +236,8 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 // ModifyPlan plans the ID of every address on an update; see
 // plannedAddressIDs. A create has no IDs to carry over and a destroy no plan.
 // It also refuses an update that removes a contact's last address, or the
-// data of an address it keeps.
+// data of an address it keeps. Under the provider's ignore_mute, it plans the
+// prior mute of every address whose mute is left to NodePing; see mute.go.
 func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
@@ -270,6 +278,11 @@ func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	ids := plannedAddressIDs(prior, planned)
 	for i, id := range ids {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, addressPath.AtListIndex(i).AtName("id"), id)...)
+	}
+
+	ignored := r.ignoredMutes(ctx, req.Config, &resp.Diagnostics)
+	for i, mute := range plannedIgnoredMutes(prior, ids, ignored) {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, addressPath.AtListIndex(i).AtName("mute"), mute)...)
 	}
 
 	for _, i := range addressesDroppingData(prior, planned, ids) {

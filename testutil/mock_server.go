@@ -575,6 +575,34 @@ func (m *MockNodePingServer) GetContact(id string) (map[string]interface{}, bool
 	return c, ok
 }
 
+// SetContactAddressMute mutes or unmutes a contact address the way the
+// NodePing web interface does, behind Terraform's back: with true, or until a
+// time with a number, the time in epoch milliseconds.
+func (m *MockNodePingServer) SetContactAddressMute(contactID, addrID string, mute interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	addresses, _ := m.contacts[contactID]["addresses"].(map[string]interface{})
+	if addr, ok := addresses[addrID].(map[string]interface{}); ok {
+		muted := make(map[string]interface{}, len(addr)+1)
+		for k, v := range addr {
+			muted[k] = v
+		}
+		muted["mute"] = mute
+		addresses[addrID] = muted
+	}
+}
+
+// ContactAddressMute returns the mute a contact address holds, and whether it
+// holds one.
+func (m *MockNodePingServer) ContactAddressMute(contactID, addrID string) (interface{}, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	addresses, _ := m.contacts[contactID]["addresses"].(map[string]interface{})
+	addr, _ := addresses[addrID].(map[string]interface{})
+	mute, ok := addr["mute"]
+	return mute, ok
+}
+
 // ContactWrites returns every create and update of a contact the mock has
 // received, in order, including those it refused.
 func (m *MockNodePingServer) ContactWrites() []ContactWrite {
