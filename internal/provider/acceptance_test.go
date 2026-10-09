@@ -651,7 +651,7 @@ data "nodeping_contactgroups" "all" {
 
 // Regression test for the gap tracked in #5: the check data sources used to
 // expose only the common envelope, so no check-type specific parameter could
-// be read back.
+// be read back. Each parameter is set on a type that stores it.
 func TestAccCheckDataSource_exposesTypeSpecificParameters(t *testing.T) {
 	mock := testutil.NewMockNodePingServer()
 	t.Cleanup(mock.Close)
@@ -662,7 +662,7 @@ func TestAccCheckDataSource_exposesTypeSpecificParameters(t *testing.T) {
 			{
 				Config: providerConfig(mock.URL()) + `
 resource "nodeping_check" "src" {
-  type          = "HTTPCONTENT"
+  type          = "HTTPADV"
   target        = "https://example.com/health"
   label         = "acc-ds-params"
   interval      = 5
@@ -671,24 +671,34 @@ resource "nodeping_check" "src" {
   statuscode    = 200
   follow        = true
   port          = 8443
-  username      = "svc"
-  password      = "s3cret"
-  warningdays   = 30
+}
+
+resource "nodeping_check" "mail" {
+  type        = "IMAP4"
+  target      = "mail.example.com"
+  label       = "acc-ds-params-mail"
+  username    = "svc"
+  password    = "s3cret"
+  warningdays = 30
 }
 
 data "nodeping_check" "by_id" {
   id = nodeping_check.src.id
 }
 
+data "nodeping_check" "mail" {
+  id = nodeping_check.mail.id
+}
+
 data "nodeping_checks" "all" {
-  type       = "HTTPCONTENT"
+  type       = "HTTPADV"
   depends_on = [nodeping_check.src]
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					// The envelope still works.
 					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "label", "acc-ds-params"),
-					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "type", "HTTPCONTENT"),
+					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "type", "HTTPADV"),
 					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "target", "https://example.com/health"),
 
 					// The point of the change: type-specific parameters.
@@ -697,8 +707,8 @@ data "nodeping_checks" "all" {
 					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "statuscode", "200"),
 					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "follow", "true"),
 					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "port", "8443"),
-					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "username", "svc"),
-					resource.TestCheckResourceAttr("data.nodeping_check.by_id", "warningdays", "30"),
+					resource.TestCheckResourceAttr("data.nodeping_check.mail", "username", "svc"),
+					resource.TestCheckResourceAttr("data.nodeping_check.mail", "warningdays", "30"),
 
 					// The plural carries the same shape.
 					resource.TestCheckResourceAttr("data.nodeping_checks.all", "checks.#", "1"),
@@ -723,25 +733,35 @@ func TestAccCheckDataSource_omitsCredentials(t *testing.T) {
 			{
 				Config: providerConfig(mock.URL()) + `
 resource "nodeping_check" "creds" {
-  type     = "SNMP"
-  target   = "1.2.3.4"
-  label    = "acc-ds-creds"
+  type    = "SNMP"
+  target  = "1.2.3.4"
+  label   = "acc-ds-creds"
+  snmpv   = "2c"
+  snmpcom = "public-but-secret"
+}
+
+resource "nodeping_check" "login" {
+  type     = "FTP"
+  target   = "ftp.example.com"
+  label    = "acc-ds-creds-login"
   username = "svc"
   password = "s3cret"
-  snmpv    = "2c"
-  snmpcom  = "public-but-secret"
 }
 
 data "nodeping_check" "creds" {
   id = nodeping_check.creds.id
 }
+
+data "nodeping_check" "login" {
+  id = nodeping_check.login.id
+}
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					// Non-secret neighbours are readable...
-					resource.TestCheckResourceAttr("data.nodeping_check.creds", "username", "svc"),
+					resource.TestCheckResourceAttr("data.nodeping_check.login", "username", "svc"),
 					resource.TestCheckResourceAttr("data.nodeping_check.creds", "snmpv", "2c"),
 					// ...while the secrets have no attribute at all.
-					resource.TestCheckNoResourceAttr("data.nodeping_check.creds", "password"),
+					resource.TestCheckNoResourceAttr("data.nodeping_check.login", "password"),
 					resource.TestCheckNoResourceAttr("data.nodeping_check.creds", "snmpcom"),
 				),
 			},

@@ -390,8 +390,14 @@ func setImportedTags(ctx context.Context, state *CheckResourceModel, defaultTags
 }
 
 func (r *CheckResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	// Skip if destroying or client not configured
-	if req.Plan.Raw.IsNull() || r.client == nil {
+	// Nothing to plan for a destroy.
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+
+	// Needs only the plan and the prior state, so it runs without a client.
+	refuseUnstored(ctx, req, resp)
+	if resp.Diagnostics.HasError() || r.client == nil {
 		return
 	}
 
