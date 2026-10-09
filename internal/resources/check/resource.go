@@ -462,9 +462,16 @@ func (r *CheckResource) muteIgnored(ctx context.Context, config tfsdk.Config, di
 
 // planTagsAll plans tags_all: the check's tags merged with the provider's
 // default_tags.
+//
+// It reads only tags and writes only tags_all. The whole plan does not decode
+// into CheckResourceModel while the list of notifications blocks is unknown
+// -- a dynamic block over IDs not known until apply -- because the model
+// holds notifications as a plain slice.
 func (r *CheckResource) planTagsAll(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	var plan CheckResourceModel
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	tagsAllPath := path.Root("tags_all")
+
+	var tags types.List
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("tags"), &tags)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -477,15 +484,14 @@ func (r *CheckResource) planTagsAll(ctx context.Context, req resource.ModifyPlan
 	// silently flattened into the defaults alone -- and while any one tag is,
 	// such as a tag taken from another resource's attribute, which would not
 	// convert to a string.
-	if plan.Tags.IsUnknown() || hasUnknownElement(plan.Tags) {
-		plan.TagsAll = types.ListUnknown(types.StringType)
-		resp.Diagnostics.Append(resp.Plan.Set(ctx, &plan)...)
+	if tags.IsUnknown() || hasUnknownElement(tags) {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, tagsAllPath, types.ListUnknown(types.StringType))...)
 		return
 	}
 
 	var configuredTags []string
-	if !plan.Tags.IsNull() {
-		resp.Diagnostics.Append(plan.Tags.ElementsAs(ctx, &configuredTags, false)...)
+	if !tags.IsNull() {
+		resp.Diagnostics.Append(tags.ElementsAs(ctx, &configuredTags, false)...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
@@ -497,8 +503,7 @@ func (r *CheckResource) planTagsAll(ctx context.Context, req resource.ModifyPlan
 		return
 	}
 
-	plan.TagsAll = tagsAll
-	resp.Diagnostics.Append(resp.Plan.Set(ctx, &plan)...)
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, tagsAllPath, tagsAll)...)
 }
 
 // hasUnknownElement reports whether a list holds a value that is not known
