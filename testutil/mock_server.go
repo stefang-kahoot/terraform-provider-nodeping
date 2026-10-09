@@ -601,6 +601,17 @@ func (m *MockNodePingServer) CheckMute(id string) (interface{}, bool) {
 	return mute, ok
 }
 
+// SetCheckField sets a top-level field of a check the way NodePing changes it
+// on its own, behind Terraform's back: "state" when the check goes down or
+// comes back up, "modified" when anything writes to the check.
+func (m *MockNodePingServer) SetCheckField(id, field string, value interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if check, ok := m.checks[id]; ok {
+		check[field] = value
+	}
+}
+
 // CheckUpdates returns the body of every update request sent for a check, in
 // order.
 func (m *MockNodePingServer) CheckUpdates(id string) []map[string]interface{} {
