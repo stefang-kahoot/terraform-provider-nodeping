@@ -569,3 +569,106 @@ resource "nodeping_check" "test" {
 		})
 	}
 }
+
+// A value removed from a check in the NodePing web interface shows as drift,
+// and the next apply puts it back (finding 36). Read used to keep the value
+// it had in state whenever NodePing had none, so the plan stayed empty and
+// the configuration was never applied again.
+func TestAccCheckResource_valueRemovedInNodePingShowsAsDrift(t *testing.T) {
+	tests := []struct {
+		name      string
+		attribute string
+		remove    func(mock *testutil.MockNodePingServer, id string)
+		where     string
+		key, want string
+	}{
+		{
+			name:      "description",
+			attribute: "description",
+			remove:    func(m *testutil.MockNodePingServer, id string) { m.SetCheckValue(id, "description", "") },
+			where:     "top", key: "description", want: `"Who to call"`,
+		},
+		{
+			name:      "dep",
+			attribute: "dep",
+			remove:    func(m *testutil.MockNodePingServer, id string) { m.SetCheckValue(id, "dep", false) },
+			where:     "top", key: "dep", want: `"CHECK-0"`,
+		},
+		{
+			name:      "contentstring",
+			attribute: "contentstring",
+			remove:    func(m *testutil.MockNodePingServer, id string) { m.SetCheckParameter(id, "contentstring", "") },
+			where:     "param", key: "contentstring", want: `"ok"`,
+		},
+		{
+			name:      "a header",
+			attribute: "sendheaders.X-One",
+			remove: func(m *testutil.MockNodePingServer, id string) {
+				m.SetCheckParameter(id, "sendheaders", map[string]interface{}{})
+			},
+			where: "param", key: "sendheaders", want: `{"X-One":"1"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := testutil.NewMockNodePingServer()
+			t.Cleanup(mock.Close)
+
+			config := providerConfig(mock.URL()) + `
+resource "nodeping_check" "test" {
+  type          = "HTTPADV"
+  target        = "https://example.com/health"
+  description   = "Who to call"
+  dep           = "CHECK-0"
+  contentstring = "ok"
+  sendheaders   = { "X-One" = "1" }
+}
+`
+
+			var id string
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6ProviderFactories(),
+				Steps: []resource.TestStep{
+					{Config: config, Check: storeCheckID("nodeping_check.test", &id)},
+					{
+						PreConfig: func() { tt.remove(mock, id) },
+						Config:    config,
+						ConfigPlanChecks: resource.ConfigPlanChecks{
+							PreApply: []plancheck.PlanCheck{
+								plancheck.ExpectResourceAction("nodeping_check.test", plancheck.ResourceActionUpdate),
+							},
+						},
+						Check: resource.ComposeAggregateTestCheckFunc(
+							resource.TestCheckResourceAttrSet("nodeping_check.test", tt.attribute),
+							expectStored(mock, "nodeping_check.test", tt.where, tt.key, tt.want),
+						),
+					},
+				},
+			})
+		})
+	}
+}
+
+// A check configured with a description of a single space -- the value the
+// provider clears a description with -- keeps it.
+func TestAccCheckResource_blankDescriptionStays(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	config := providerConfig(mock.URL()) + `
+resource "nodeping_check" "test" {
+  type        = "HTTP"
+  target      = "https://example.com/health"
+  description = " "
+}
+`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{Config: config, Check: resource.TestCheckResourceAttr("nodeping_check.test", "description", " ")},
+			{Config: config, PlanOnly: true},
+		},
+	})
+}

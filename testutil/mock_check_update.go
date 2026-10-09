@@ -174,3 +174,14 @@ func (m *MockNodePingServer) SetCheckParameter(id, key string, value interface{}
 	params[key] = value
 	check["parameters"] = params
 }
+
+// SetCheckValue sets one of a check's top-level values, such as its
+// description, the way someone editing it in the NodePing web interface
+// would: behind Terraform's back.
+func (m *MockNodePingServer) SetCheckValue(id, key string, value interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if check, ok := m.checks[id]; ok {
+		check[key] = value
+	}
+}
