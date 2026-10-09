@@ -450,7 +450,8 @@ func (r *ContactResource) ImportState(ctx context.Context, req resource.ImportSt
 // apart by ID, so matching those by value could swap them. Whatever the plan
 // does not account for follows in ID order -- an address added outside
 // Terraform, or every address when there is no plan to match against, as on
-// import.
+// import. An address with no headers or query strings reads them as the block
+// at its position has them; see emptyAsPlanned.
 func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.ContactAddress, planAddresses []AddressModel, diags *diag.Diagnostics) []AddressModel {
 	if len(apiAddresses) == 0 {
 		return nil
@@ -520,24 +521,47 @@ func mapAddressesToModel(ctx context.Context, apiAddresses map[string]client.Con
 	// neighbour's ID. Contact groups reference address IDs, so that quietly
 	// repoints any group that named one of them.
 	ordered := make([]string, 0, len(ids))
+	blocks := make([]*AddressModel, 0, len(ids))
 	next := 0
-	for _, id := range matched {
+	for i, id := range matched {
 		if id == "" {
 			if next < len(leftover) {
 				ordered = append(ordered, leftover[next])
+				blocks = append(blocks, &planAddresses[i])
 				next++
 			}
 			continue
 		}
 		ordered = append(ordered, id)
+		blocks = append(blocks, &planAddresses[i])
 	}
-	ordered = append(ordered, leftover[next:]...)
+	for _, id := range leftover[next:] {
+		ordered = append(ordered, id)
+		blocks = append(blocks, nil)
+	}
 
 	result := make([]AddressModel, 0, len(ordered))
-	for _, id := range ordered {
-		result = append(result, addressToModel(ctx, id, apiAddresses[id], diags))
+	for i, id := range ordered {
+		model := addressToModel(ctx, id, apiAddresses[id], diags)
+		if block := blocks[i]; block != nil {
+			model.Headers = emptyAsPlanned(model.Headers, block.Headers)
+			model.QueryStrings = emptyAsPlanned(model.QueryStrings, block.QueryStrings)
+		}
+		result = append(result, model)
 	}
 	return result
+}
+
+// emptyAsPlanned reads headers or query strings with no entries the way the
+// block has them. NodePing holds none either as {} -- what an update that
+// cleared them leaves -- or with no key at all, and addressToModel reads both
+// as null, as it must for an import. A block that is `headers = {}` has to
+// read back as {} instead; a block without headers stays null.
+func emptyAsPlanned(read, planned types.Map) types.Map {
+	if read.IsNull() && !planned.IsNull() && !planned.IsUnknown() && len(planned.Elements()) == 0 {
+		return planned
+	}
+	return read
 }
 
 // addressKey identifies an address the way a configuration does. NodePing

@@ -81,9 +81,19 @@ func TestAddressRequest(t *testing.T) {
 		`"mute":true,"action":"post","headers":{"X-One":"1","X-Two":"2"},"querystrings":{"q1":"1"},` +
 		`"data":"{\"text\":\"{label}\"}","priority":1}`
 
+	const (
+		hook        = `"address":"https://hooks.example.com/one","type":"webhook"`
+		flagsOff    = `"suppressup":false,"suppressdown":false,"suppressfirst":false,"suppressdiag":false,"suppressall":false`
+		allCleared  = `{` + hook + `,` + flagsOff + `,"headers":{},"querystrings":{}}`
+		nothingSent = `{` + hook + `,` + flagsOff + `}`
+	)
+
 	email := addressBlock("email", "a@example.com")
-	emptyHeaders := addressBlock("webhook", "https://hooks.example.com/one")
-	emptyHeaders.Headers = stringMapValue(t, map[string]string{})
+	bare := addressBlock("webhook", "https://hooks.example.com/one")
+	emptyMaps := bare
+	emptyMaps.Headers = stringMapValue(t, map[string]string{})
+	emptyMaps.QueryStrings = stringMapValue(t, map[string]string{})
+	priorEverySet := everySet(t)
 
 	tests := []struct {
 		name  string
@@ -97,10 +107,30 @@ func TestAddressRequest(t *testing.T) {
 			want: `{"address":"a@example.com","type":"email","mute":false}`,
 		},
 		{
-			name:  "an existing address sends mute only when true",
+			name:  "an existing address sends every suppress flag, and mute only when true",
 			addr:  email,
 			prior: &email,
-			want:  `{"address":"a@example.com","type":"email"}`,
+			want:  `{"address":"a@example.com","type":"email",` + flagsOff + `}`,
+		},
+		{
+			// Finding 32: left out, NodePing kept the flags, headers and
+			// query strings.
+			name:  "an existing address clears what the plan removed",
+			addr:  bare,
+			prior: &priorEverySet,
+			want:  allCleared,
+		},
+		{
+			name:  "an existing address sends {} for maps emptied in the configuration",
+			addr:  emptyMaps,
+			prior: &priorEverySet,
+			want:  allCleared,
+		},
+		{
+			name:  "an existing address with no maps before leaves empty ones out",
+			addr:  emptyMaps,
+			prior: &bare,
+			want:  nothingSent,
 		},
 		{
 			name: "a new address with every attribute set",
@@ -114,9 +144,9 @@ func TestAddressRequest(t *testing.T) {
 			want:  everySetJSON,
 		},
 		{
-			name: "a new address leaves out an empty map",
-			addr: emptyHeaders,
-			want: `{"address":"https://hooks.example.com/one","type":"webhook","mute":false}`,
+			name: "a new address leaves out empty maps",
+			addr: emptyMaps,
+			want: `{` + hook + `,"mute":false}`,
 		},
 	}
 

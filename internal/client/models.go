@@ -34,20 +34,27 @@ type ContactAddress struct {
 
 // AddressRequest is an address as a create or an update writes it: in
 // `newaddresses` for one NodePing has yet to create, or under its ID in an
-// update's `addresses` for one it keeps.
+// update's `addresses` for one it keeps. NodePing merges an update into the
+// address field by field and keeps whatever it leaves out.
 type AddressRequest struct {
-	Address       string `json:"address"`
-	Type          string `json:"type"`
-	SuppressUp    bool   `json:"suppressup,omitempty"`
-	SuppressDown  bool   `json:"suppressdown,omitempty"`
-	SuppressFirst bool   `json:"suppressfirst,omitempty"`
-	SuppressDiag  bool   `json:"suppressdiag,omitempty"`
-	SuppressAll   bool   `json:"suppressall,omitempty"`
+	Address string `json:"address"`
+	Type    string `json:"type"`
+	// The suppress flags are pointers so that false can be sent, which is
+	// how an update switches one off. nil leaves the flag out.
+	SuppressUp    *bool `json:"suppressup,omitempty"`
+	SuppressDown  *bool `json:"suppressdown,omitempty"`
+	SuppressFirst *bool `json:"suppressfirst,omitempty"`
+	SuppressDiag  *bool `json:"suppressdiag,omitempty"`
+	SuppressAll   *bool `json:"suppressall,omitempty"`
 	// Mute is left out when nil, and sent as given otherwise, false included.
-	Mute         *bool             `json:"mute,omitempty"`
-	Action       string            `json:"action,omitempty"`
-	Headers      map[string]string `json:"headers,omitempty"`
-	QueryStrings map[string]string `json:"querystrings,omitempty"`
+	Mute   *bool  `json:"mute,omitempty"`
+	Action string `json:"action,omitempty"`
+	// Headers and QueryStrings, when sent, replace the address's map as a
+	// whole, and {} clears it. A nil map leaves the key out, and the map as
+	// it is; an empty one is sent as {}. omitzero, unlike omitempty, tells
+	// the two apart.
+	Headers      map[string]string `json:"headers,omitzero"`
+	QueryStrings map[string]string `json:"querystrings,omitzero"`
 	Data         string            `json:"data,omitempty"`
 	Priority     *int              `json:"priority,omitempty"`
 }
