@@ -23,6 +23,9 @@ type MockNodePingServer struct {
 	accounts map[string]string
 	// requests holds every request received, in order.
 	requests []Request
+	// stale holds the checks whose answers are made stale. See
+	// AnswerStaleUpdates.
+	stale map[string]*staleCheck
 }
 
 // ContactWrite is a create or update of a contact as the mock received it,
@@ -444,7 +447,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(check)
+		_ = json.NewEncoder(w).Encode(m.readAnswer(id, check))
 
 	case http.MethodPut:
 		check, ok := m.find(r, m.checks, id)
@@ -465,13 +468,16 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 		}
 		m.checkUpdates[id] = append(m.checkUpdates[id], sent)
 
+		// The check as it was, for the answer. See updateAnswer.
+		before := copyCheck(check)
+
 		// NodePing merges an update into the check: what it leaves out stays
 		// as it was. See mergeCheckUpdate.
 		mergeCheckUpdate(check, req)
 
 		m.checks[id] = check
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(check)
+		_ = json.NewEncoder(w).Encode(m.updateAnswer(id, check, before))
 
 	case http.MethodDelete:
 		if _, ok := m.find(r, m.checks, id); !ok {

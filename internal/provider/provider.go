@@ -29,6 +29,9 @@ var _ provider.Provider = &NodePingProvider{}
 
 type NodePingProvider struct {
 	version string
+	// readBackWaits are the client's; see client.ClientConfig. Only tests
+	// set them, through NewWithReadBackWaits.
+	readBackWaits []time.Duration
 }
 
 type NodePingProviderModel struct {
@@ -258,6 +261,8 @@ func (p *NodePingProvider) Configure(ctx context.Context, req provider.Configure
 		UserAgent:    "terraform-provider-nodeping/" + p.version,
 		DefaultTags:  defaultTags,
 		IgnoreMute:   config.IgnoreMute.ValueBool(),
+		// Empty outside tests: the client's own.
+		ReadBackWaits: p.readBackWaits,
 	}
 
 	c := client.NewClient(clientCfg)

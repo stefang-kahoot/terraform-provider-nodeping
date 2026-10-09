@@ -20,6 +20,7 @@ does, and it is the source for a support request to NodePing.
 | 6 | Headers stored as `null` | "key:value pairs" | Document, or drop the nulls | Low |
 | 7 | Older checks hold short-form notifications | Only the object form | Migrate, or document | Low |
 | 8 | What an update does with an omitted field | Nothing | Document it | None |
+| 9 | An update is sometimes answered with the check as it was before | Returns the check "created or modified" | Answer with the updated check | None |
 
 ## 1. Errors come back with HTTP 200
 
@@ -131,6 +132,29 @@ what we observed:
 (`f35cf3a`). It sends `addresses` whenever the plan has an address, as `{}`
 when none are kept (`c624d2e`).
 
+## 9. An update is sometimes answered with the check as it was before
+
+`PUT /checks/<id>` sometimes answers 200 with the check as it was **before**
+the update: its old `modified` and its old values. The update is applied all
+the same, and a `GET` a few seconds later shows it, with a later `modified`.
+This happened to 1 in 33 full updates sent more than 4 s after the create, to
+5 in about 180 updates sent 2 s apart, and to 19 in 540 in a later run, with
+no pattern by spacing. A stale answer is the whole old check, never part of
+it; the first `GET` a second later showed the update every time (the longest
+lag seen was 2 s). Every fresh answer had a later `modified`, also for an
+update that changed nothing.
+
+**Effect:** a client that takes the answer as the result of its update sees
+the old values. Terraform fails the apply with "Provider produced inconsistent
+result after apply", although NodePing applied the change.
+
+**Provider:** an answer whose `modified` is no later than the check's before
+the update, and which does not already hold the planned values, is read again
+after 1, 2, 4 and 8 s, until a read shows the update. If none does, the apply
+fails with an error that names the check and says to plan again. Contacts and
+contact groups gave no stale answer in 80 and 75 updates; they carry no
+`modified` to tell one by.
+
 ## Raising it with NodePing
 
 The API has carried version 1 in its URL since the start, and its changelog
@@ -138,7 +162,7 @@ records only additions (latest 2025-08-14). Other clients probably depend on
 some of these behaviours, so the request should be split by risk:
 
 1. **Documentation only, no risk:** #2's current answers, #4, #6, #7, #8.
-2. **Small fixes:** #3's message, and #5 in the web UI.
+2. **Small fixes:** #3's message, #5 in the web UI, and #9's stale answers.
 3. **Breaking:** real status codes (#1) and 404s (#2). Ask whether they
    would offer these as an opt-in (a request header or query parameter) or in
    an `/api/2`, rather than changing `/api/1`. Note that #1 is also a docs

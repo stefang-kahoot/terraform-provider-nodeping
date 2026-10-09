@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/testutil"
@@ -41,6 +42,18 @@ type changeCheckBeforeApply struct {
 
 func (c changeCheckBeforeApply) CheckPlan(context.Context, plancheck.CheckPlanRequest, *plancheck.CheckPlanResponse) {
 	c.mock.SetCheckField(*c.id, c.field, c.value)
+}
+
+// expectMockCheckField checks that the state holds a top-level field of the
+// check as the mock holds it.
+func expectMockCheckField(mock *testutil.MockNodePingServer, id *string, field string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		check, ok := mock.GetCheck(*id)
+		if !ok {
+			return fmt.Errorf("check %s is not in the mock", *id)
+		}
+		return resource.TestCheckResourceAttr("nodeping_check.test", field, fmt.Sprint(check[field]))(s)
+	}
 }
 
 // An update of a check whose state or modified NodePing changed after the plan
@@ -92,7 +105,9 @@ resource "nodeping_check" "test" {
 						ConfigPlanChecks: resource.ConfigPlanChecks{
 							PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
 						},
-						Check: resource.TestCheckResourceAttr("nodeping_check.test", tt.attribute, strconv.FormatInt(tt.after, 10)),
+						// What NodePing holds: tt.after, or for modified the
+						// time of the update made after it.
+						Check: expectMockCheckField(mock, &id, tt.attribute),
 					},
 				},
 			})
