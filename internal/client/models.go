@@ -291,6 +291,11 @@ type CheckUpdateRequest struct {
 	// has to send an empty list. A nil Tags goes out as null, which NodePing
 	// ignores as well.
 	Tags []string `json:"tags"`
+	// Notifications takes the place of the embedded omitempty one for the
+	// same reason: NodePing replaces a check's notifications with the list an
+	// update sends, keeps them when the update leaves it out, and ignores
+	// null, so removing the last notification has to send an empty list.
+	Notifications []map[string]interface{} `json:"notifications"`
 }
 
 type Notification struct {

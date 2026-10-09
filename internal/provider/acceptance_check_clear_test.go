@@ -336,3 +336,54 @@ resource "nodeping_check" "test" {
 		})
 	}
 }
+
+// NodePing replaces a check's notifications with the list an update sends,
+// and keeps them when the update leaves the list out. Removing some worked;
+// removing the last one left the update without a list, and failed the apply
+// with "block count changed from 0 to 1", as the last tag once did.
+func TestAccCheckResource_removesTheLastNotification(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	config := func(notifications ...string) string {
+		blocks := ""
+		for _, id := range notifications {
+			blocks += fmt.Sprintf(`
+  notifications {
+    contact_id = %q
+  }
+`, id)
+		}
+		return providerConfig(mock.URL()) + `
+resource "nodeping_check" "test" {
+  type   = "HTTP"
+  target = "https://example.com/health"
+` + blocks + `
+}
+`
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config("GROUP-1", "GROUP-2"),
+				Check:  resource.TestCheckResourceAttr("nodeping_check.test", "notifications.#", "2"),
+			},
+			{
+				Config: config("GROUP-2"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("nodeping_check.test", "notifications.#", "1"),
+					expectStored(mock, "nodeping_check.test", "top", "notifications", `[{"GROUP-2":{"delay":0,"schedule":"All"}}]`),
+				),
+			},
+			{
+				Config: config(),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("nodeping_check.test", "notifications.#", "0"),
+					expectStored(mock, "nodeping_check.test", "top", "notifications", `[]`),
+				),
+			},
+		},
+	})
+}

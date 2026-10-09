@@ -311,6 +311,8 @@ value NodePing stores as cleared, and only for a value the check has:
 - `runlocations` is emptied.
 - `sendheaders` and `receiveheaders` lose each header removed from the map.
   NodePing merges these per header, so the provider names each removed one.
+- `notifications`: an update always sends the whole list, which NodePing
+  replaces, so removing the last block removes the last notification.
 
 Removing any other argument (`homeloc`, `port`, `username`, `secure`,
 `verify`, the `dns*`, `snmp*` and database arguments, ...) has not been tried

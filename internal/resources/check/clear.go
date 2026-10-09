@@ -16,11 +16,17 @@ import (
 // NodePing merges an update into the check: whatever it leaves out keeps its
 // stored value (finding 28). The plan alone cannot say what to clear, since a
 // removed attribute is simply null in it; the prior state says what the check
-// had.
+// had. Tags and notifications are lists NodePing replaces, and are always
+// sent, empty when there are none.
 func (r *CheckResource) buildUpdateRequest(ctx context.Context, plan, state *CheckResourceModel, diags *diag.Diagnostics) client.CheckUpdateRequest {
 	req := r.buildCreateRequest(ctx, plan, diags)
 	clearRemoved(&req, plan, state)
-	return client.CheckUpdateRequest{CheckCreateRequest: req, Tags: req.Tags}
+
+	notifications := req.Notifications
+	if notifications == nil {
+		notifications = []map[string]interface{}{}
+	}
+	return client.CheckUpdateRequest{CheckCreateRequest: req, Tags: req.Tags, Notifications: notifications}
 }
 
 // clearRemoved sets, on an update, the value that clears each attribute the

@@ -289,3 +289,50 @@ func TestBuildUpdateRequestDeletesRemovedHeaders(t *testing.T) {
 		})
 	}
 }
+
+// NodePing replaces a check's notifications with the list an update sends,
+// and keeps them when it is left out or null: an update always sends it.
+func TestBuildUpdateRequestAlwaysSendsNotifications(t *testing.T) {
+	t.Parallel()
+
+	notify := func(ids ...string) []NotificationModel {
+		var out []NotificationModel
+		for _, id := range ids {
+			out = append(out, NotificationModel{
+				ContactID: types.StringValue(id),
+				Delay:     types.Int64Value(0),
+				Schedule:  types.StringValue("All"),
+			})
+		}
+		return out
+	}
+
+	tests := []struct {
+		name          string
+		before, after []NotificationModel
+		want          string
+	}{
+		{"the last one removed", notify("G1"), nil, `[]`},
+		{"one of two removed", notify("G1", "G2"), notify("G2"), `[{"G2":{"delay":0,"schedule":"All"}}]`},
+		{"none before or after", nil, nil, `[]`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			state, plan := unset(), unset()
+			state.Notifications, plan.Notifications = tt.before, tt.after
+
+			r := &CheckResource{}
+			var diags diag.Diagnostics
+			req := r.buildUpdateRequest(context.Background(), plan, state, &diags)
+			if got := requestJSON(t, req)["notifications"]; got != tt.want {
+				t.Errorf("notifications = %s, want %s", got, tt.want)
+			}
+
+			if _, sent := requestJSON(t, r.buildCreateRequest(context.Background(), plan, &diags))["notifications"]; sent && len(tt.after) == 0 {
+				t.Error("a create sent notifications it does not have")
+			}
+		})
+	}
+}
