@@ -21,6 +21,8 @@ does, and it is the source for a support request to NodePing.
 | 7 | Older checks hold short-form notifications | Only the object form | Migrate, or document | Low |
 | 8 | What an update does with an omitted field | Nothing | Document it | None |
 | 9 | An update is sometimes answered with the check as it was before | Returns the check "created or modified" | Answer with the updated check | None |
+| 10 | A parameter the check type does not take is dropped without a word | Which parameters each type takes, nearly right | Say so in the answer, and fix the per-type lists | Low |
+| 11 | A type change freezes the old type's parameters | Nothing | Document it, or let an update clear them | Low |
 
 ## 1. Errors come back with HTTP 200
 
@@ -155,14 +157,59 @@ fails with an error that names the check and says to plan again. Contacts and
 contact groups gave no stale answer in 80 and 75 updates; they carry no
 `modified` to tell one by.
 
+## 10. A parameter the check type does not take is dropped without a word
+
+A create or update of a check accepts every parameter, answers 200, and stores
+only those its type takes: an HTTPADV check sent `servername`, which only SSL
+checks take, answers without it and never holds it. Nothing in the answer says
+so. We created and updated checks of all 33 types with every parameter, in
+October 2026; create and update behaved alike. 25 parameters are stored only
+by the types that take them, and those match the per-type lists in the docs,
+except for:
+
+- `statuscode` on DOHDOT: stored, and listed in the general section ("HTTPADV
+  or DOHDOT"), but missing from DOHDOT's own list.
+- `contentstring`, `invert`, `follow`, `port`, `verify` and `ipv6`: stored on
+  every type, though the docs list them for a few. The docs describe which
+  types use them.
+- `verifyvolume` and `volumemin` (docs: AUDIO): stored by no type, AUDIO
+  included. `autodiag` and `homeloc` (a Premiere feature) read back as
+  `false` on every type, on the account we used.
+
+**Effect:** a client that sends such a parameter sees no error, and finds it
+missing on the next read.
+
+**Provider:** fails the plan when it would send a parameter the planned check
+type does not store, naming the parameter and the types that store it. The
+per-type table and the rule are in the check resource's documentation.
+
+## 11. A type change freezes the old type's parameters
+
+When a check's type changes, NodePing keeps the parameters of the old type
+and returns them, even those the new type does not take: an HTTP check that
+used to be HTTPPARSE still holds its `fields`. No update of the new type
+changes or clears them; a change sent with the new type is ignored. An update
+that changes the type back to one that takes them changes them in the same
+request.
+
+**Effect:** a client cannot clear what a check holds from an earlier type
+without changing the type back, and cannot tell from the check which of its
+parameters are in use.
+
+**Provider:** a value held this way passes the plan while the configuration
+keeps it as it is. Adding or changing it fails the plan, as in #10. Removing it
+replaces the check, with a warning in the plan.
+
 ## Raising it with NodePing
 
 The API has carried version 1 in its URL since the start, and its changelog
 records only additions (latest 2025-08-14). Other clients probably depend on
 some of these behaviours, so the request should be split by risk:
 
-1. **Documentation only, no risk:** #2's current answers, #4, #6, #7, #8.
-2. **Small fixes:** #3's message, #5 in the web UI, and #9's stale answers.
+1. **Documentation only, no risk:** #2's current answers, #4, #6, #7, #8,
+   #11, and #10's per-type lists.
+2. **Small fixes:** #3's message, #5 in the web UI, #9's stale answers, and a
+   note in the answer when #10 drops a parameter.
 3. **Breaking:** real status codes (#1) and 404s (#2). Ask whether they
    would offer these as an opt-in (a request header or query parameter) or in
    an `/api/2`, rather than changing `/api/1`. Note that #1 is also a docs

@@ -164,6 +164,16 @@ func isEmpty(v attr.Value) bool {
 	return false
 }
 
+// isEmptyDescription is isEmpty for a description, which is also empty when
+// it is the value a description is cleared with: NodePing holds that, and it
+// reads back as none (checkattr.ClearedDescription).
+func isEmptyDescription(v attr.Value) bool {
+	if s, ok := v.(types.String); ok && s.ValueString() == checkattr.ClearedDescription {
+		return true
+	}
+	return isEmpty(v)
+}
+
 // nonEmpty returns a pointer to a string attribute's value, or nil when it is
 // null or "", which leaves it out of a request.
 func nonEmpty(v types.String) *string {

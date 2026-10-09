@@ -25,7 +25,9 @@ func createCheck(t *testing.T, m *MockNodePingServer, body string) string {
 func TestMockCheckUpdateMerges(t *testing.T) {
 	t.Parallel()
 
+	// HTTPADV stores every parameter below but fields, which HTTPPARSE does.
 	const base = `"type":"HTTPADV","target":"https://example.com"`
+	const parse = `"type":"HTTPPARSE","target":"https://example.com"`
 
 	tests := []struct {
 		name   string
@@ -91,14 +93,18 @@ func TestMockCheckUpdateMerges(t *testing.T) {
 			m := NewMockNodePingServer()
 			t.Cleanup(m.Close)
 
-			create := "{" + base
+			typ := base
+			if tt.key == "fields" {
+				typ = parse
+			}
+			create := "{" + typ
 			if tt.create != "" {
 				create += "," + tt.create
 			}
 			id := createCheck(t, m, create+"}")
 
 			var answer map[string]interface{}
-			if err := json.Unmarshal([]byte(send(t, m, http.MethodPut, "/checks/"+id, "{"+base+","+tt.update+"}")), &answer); err != nil {
+			if err := json.Unmarshal([]byte(send(t, m, http.MethodPut, "/checks/"+id, "{"+typ+","+tt.update+"}")), &answer); err != nil {
 				t.Fatal(err)
 			}
 

@@ -6,9 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/checkattr"
@@ -38,20 +40,7 @@ func replaceOnRemovedFields() planmodifier.Map {
 }
 
 func requiresReplaceForRemovedFields(ctx context.Context, req planmodifier.MapRequest, resp *mapplanmodifier.RequiresReplaceIfFuncResponse) {
-	if req.StateValue.IsNull() || req.StateValue.IsUnknown() || req.PlanValue.IsUnknown() {
-		return
-	}
-
-	var prior, planned map[string]checkattr.FieldModel
-	resp.Diagnostics.Append(req.StateValue.ElementsAs(ctx, &prior, false)...)
-	if !req.PlanValue.IsNull() {
-		resp.Diagnostics.Append(req.PlanValue.ElementsAs(ctx, &planned, false)...)
-	}
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	gone := removedFields(prior, planned)
+	gone := removedFieldsBetween(ctx, req.StateValue, req.PlanValue, &resp.Diagnostics)
 	if len(gone) == 0 {
 		return
 	}
@@ -64,7 +53,26 @@ func requiresReplaceForRemovedFields(ctx context.Context, req planmodifier.MapRe
 			"Terraform will replace the check instead: delete it and create a new one with a new ID, "+
 			"which starts without the old check's history and breaks anything that refers to the old ID, such as another check's dep. "+
 			"To keep the check, put them back in the configuration.",
-			checkName(ctx, req), strings.Join(gone, ", ")))
+			checkName(ctx, req.State), strings.Join(gone, ", ")))
+}
+
+// removedFieldsBetween is removedFields for the prior state's and the
+// planned fields attribute. Nothing is removed while the planned fields are
+// unknown, or when the prior state has none.
+func removedFieldsBetween(ctx context.Context, priorValue, plannedValue types.Map, diags *diag.Diagnostics) []string {
+	if priorValue.IsNull() || priorValue.IsUnknown() || plannedValue.IsUnknown() {
+		return nil
+	}
+
+	var prior, planned map[string]checkattr.FieldModel
+	diags.Append(priorValue.ElementsAs(ctx, &prior, false)...)
+	if !plannedValue.IsNull() {
+		diags.Append(plannedValue.ElementsAs(ctx, &planned, false)...)
+	}
+	if diags.HasError() {
+		return nil
+	}
+	return removedFields(prior, planned)
 }
 
 // removedFields lists, sorted, what the prior state's fields have and the
@@ -100,10 +108,10 @@ func removedFields(prior, planned map[string]checkattr.FieldModel) []string {
 
 // checkName names a check for a diagnostic by its label and ID, as far as the
 // prior state has them.
-func checkName(ctx context.Context, req planmodifier.MapRequest) string {
+func checkName(ctx context.Context, state tfsdk.State) string {
 	var label, id types.String
-	req.State.GetAttribute(ctx, path.Root("label"), &label)
-	req.State.GetAttribute(ctx, path.Root("id"), &id)
+	state.GetAttribute(ctx, path.Root("label"), &label)
+	state.GetAttribute(ctx, path.Root("id"), &id)
 
 	switch {
 	case label.ValueString() != "" && id.ValueString() != "":

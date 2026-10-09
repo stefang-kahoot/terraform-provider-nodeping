@@ -372,6 +372,8 @@ var checkTopLevelFields = []string{
 	"description", "tags", "runlocations", "homeloc", "autodiag", "public",
 }
 
+// checkParametersFrom returns the parameters a create stores: those the
+// check's type stores (see storesParameter).
 func checkParametersFrom(req map[string]interface{}) map[string]interface{} {
 	skip := make(map[string]bool, len(checkTopLevelFields))
 	for _, k := range checkTopLevelFields {
@@ -380,7 +382,7 @@ func checkParametersFrom(req map[string]interface{}) map[string]interface{} {
 
 	params := make(map[string]interface{}, len(req))
 	for k, v := range req {
-		if skip[k] {
+		if skip[k] || !storesParameter(req["type"], k) {
 			continue
 		}
 		params[k] = v

@@ -390,8 +390,14 @@ func setImportedTags(ctx context.Context, state *CheckResourceModel, defaultTags
 }
 
 func (r *CheckResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	// Skip if destroying or client not configured
-	if req.Plan.Raw.IsNull() || r.client == nil {
+	// Nothing to plan for a destroy.
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+
+	// Needs only the plan and the prior state, so it runs without a client.
+	refuseUnstored(ctx, req, resp)
+	if resp.Diagnostics.HasError() || r.client == nil {
 		return
 	}
 
@@ -773,8 +779,8 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 // back null and produces no plan.
 //
 // What remains below is only what a resource needs and a data source does
-// not: a plan or prior state to stay consistent with, and credentials the API
-// does not echo. holds says which of the two the model carries; see keep.
+// not: a plan or prior state to stay consistent with, and credentials it does
+// not read back. holds says which of the two the model carries; see keep.
 func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check, model *CheckResourceModel, holds modelHolds, diags *diag.Diagnostics) {
 	a := checkattr.FromAPI(ctx, check, diags)
 
@@ -794,10 +800,11 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 	// Everything else resolves through keep(). See its comment: the API's
 	// value wins whenever it has one, but its silence must not be allowed to
 	// overwrite a planned value with null, nor its empty value a null one.
+	// A description's empty value includes the one it is cleared with.
 	model.Target = keep(holds, model.Target, a.Target)
 	model.Label = keep(holds, model.Label, a.Label)
 	model.Dep = keep(holds, model.Dep, a.Dep)
-	model.Description = keep(holds, model.Description, a.Description)
+	model.Description = keepIf(holds, model.Description, a.Description, isEmptyDescription)
 	model.Interval = keep(holds, model.Interval, a.Interval)
 	model.Threshold = keep(holds, model.Threshold, a.Threshold)
 	model.Sens = keep(holds, model.Sens, a.Sens)
@@ -864,15 +871,17 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 		model.Tags = types.ListNull(types.StringType)
 	}
 
-	// NodePing never returns the password, so there is nothing to map here.
+	// The password is not read back. NodePing does return it, as it was sent
+	// (probed 2026-10-09 on FTP, IMAP4, MYSQL, POP3, SMTP and SSH checks), but
+	// it is a secret, and checkattr leaves it out for the data sources' sake.
 	// Callers restore the configured value; see preservePassword.
 	model.Password = types.StringNull()
 
 	// snmpcom is left exactly as the caller had it. It is an SNMP community
 	// string -- a shared secret in all but name, which is why checkattr omits
-	// it -- so Create, Read and Update keep the configured value and an import
-	// leaves it null for the configuration to supply, the same bargain as
-	// password.
+	// it, although NodePing returns it as sent (probed 2026-10-09) -- so
+	// Create, Read and Update keep the configured value and an import leaves
+	// it null for the configuration to supply, the same bargain as password.
 }
 
 // modelHolds is what the model handed to mapCheckToModel holds beforehand.
@@ -892,8 +901,9 @@ const (
 	nothing
 )
 
-// keep resolves one attribute: the API's value when it has one, whatever the
-// caller already held when it does not, and the caller's when both are empty.
+// keep resolves one attribute: the API's value when it has one, the planned
+// value when an apply's answer has none, and the caller's when both are
+// empty.
 //
 // Most check attributes are Optional and not Computed, so Terraform requires
 // the value an apply produces to equal the value it planned, exactly.
@@ -901,12 +911,18 @@ const (
 // null over a planned value merely because the response did not mention the
 // field fails the apply outright with "Provider produced inconsistent result
 // after apply" -- and NodePing does leave a parameter out of its answer when
-// the check type does not use it. The mapping this package used to carry
-// guarded seven attributes against exactly that, by hand, under the comment
-// "these fields are check-type specific and may not be returned by the API".
-// checkattr has no equivalent, and correctly so: a data source has no plan to
-// contradict. This is that guard, generalised to every attribute rather than
-// the seven someone happened to hit.
+// the check type does not use it, and has left a value it was just sent out
+// of its answer to an update. The mapping this package used to carry guarded seven
+// attributes against exactly that, by hand, under the comment "these fields
+// are check-type specific and may not be returned by the API". checkattr has
+// no equivalent, and correctly so: a data source has no plan to contradict.
+// This is that guard, generalised to every attribute rather than the seven
+// someone happened to hit.
+//
+// A refresh has no plan to contradict either, and reads NodePing as it is: a
+// value NodePing no longer has reads as null, so that one removed in the web
+// interface shows as drift and the next apply puts it back. Keeping the prior
+// state's value there hid the removal for good (finding 36).
 //
 // The reverse holds too. A value removed from the configuration is cleared in
 // NodePing by sending its empty value (see clearRemoved), and NodePing then
@@ -917,21 +933,25 @@ const (
 // planned null. An import has nothing to hold and reads NodePing's values as
 // they are; see nothing.
 //
-// Drift is still reported whenever the API has an opinion -- a value it
-// returns always beats the one in state. What is given up is noticing that a
-// parameter disappeared at NodePing altogether, which is the same trade the
-// hand-written guards already made.
+// A value the API returns always beats the one held. What an apply gives up
+// is noticing that a parameter disappeared at NodePing during the apply
+// itself, which the next refresh catches.
 //
 // An unknown value is never kept: it has to be resolved to something concrete
 // before the apply ends, so the API's value is the right answer there.
 func keep[T attr.Value](holds modelHolds, current, fromAPI T) T {
+	return keepIf(holds, current, fromAPI, isEmpty)
+}
+
+// keepIf is keep with the attribute's own idea of an empty value.
+func keepIf[T attr.Value](holds modelHolds, current, fromAPI T, empty func(attr.Value) bool) T {
 	if holds == nothing || current.IsUnknown() {
 		return fromAPI
 	}
-	if isEmpty(current) && isEmpty(fromAPI) {
+	if empty(current) && empty(fromAPI) {
 		return current
 	}
-	if fromAPI.IsNull() && !current.IsNull() {
+	if holds == thePlan && fromAPI.IsNull() && !current.IsNull() {
 		return current
 	}
 	return fromAPI
@@ -981,10 +1001,10 @@ func fieldsToAPI(in map[string]checkattr.FieldModel) map[string]client.CheckFiel
 	return out
 }
 
-// preservePassword restores a write-only credential after mapCheckToModel.
-// NodePing does not echo the password back, so mapping the response would
-// replace the configured value with null and fail the apply with
-// "inconsistent values for sensitive attribute".
+// preservePassword restores the password after mapCheckToModel, which does
+// not read it from NodePing's answer: left null, the configured value would
+// be lost, and the apply would fail with "inconsistent values for sensitive
+// attribute".
 func preservePassword(model *CheckResourceModel, configured types.String) {
 	if !configured.IsNull() && !configured.IsUnknown() {
 		model.Password = configured

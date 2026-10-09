@@ -222,6 +222,8 @@ func TestKeep(t *testing.T) {
 		{"a refresh reads a stored false as unset", thePriorState, types.BoolNull(), types.BoolValue(false), types.BoolNull()},
 		{"a refresh keeps a false", thePriorState, types.BoolValue(false), types.BoolValue(false), types.BoolValue(false)},
 		{"a refresh reads a change", thePriorState, types.BoolValue(true), types.BoolValue(false), types.BoolValue(false)},
+		{"a refresh reads a value NodePing no longer has as removed", thePriorState, types.StringValue("x"), types.StringNull(), types.StringNull()},
+		{"a refresh keeps an empty string NodePing has none for", thePriorState, types.StringValue(""), types.StringNull(), types.StringValue("")},
 		{"an import reads a stored false as false", nothing, types.BoolNull(), types.BoolValue(false), types.BoolValue(false)},
 		{"an import reads an empty list as NodePing has it", nothing, types.ListNull(types.StringType), types.ListNull(types.StringType), types.ListNull(types.StringType)},
 	}
@@ -389,6 +391,29 @@ func TestPublicIsSentAsAStringOnUpdate(t *testing.T) {
 		create := requestJSON(t, r.buildCreateRequest(context.Background(), model, &diags))
 		if want := strconv.FormatBool(public); create["public"] != want {
 			t.Errorf("create sent public = %s, want %s", create["public"], want)
+		}
+	}
+}
+
+// A description's empty value includes the one the provider clears it with,
+// which reads back as none: configured as such, it stays.
+func TestKeepDescription(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		holds         modelHolds
+		current, from types.String
+		want          types.String
+	}{
+		{"a cleared description stays removed", thePlan, types.StringNull(), types.StringNull(), types.StringNull()},
+		{"a blank description stays after an apply", thePlan, types.StringValue(" "), types.StringNull(), types.StringValue(" ")},
+		{"a blank description stays after a refresh", thePriorState, types.StringValue(" "), types.StringNull(), types.StringValue(" ")},
+		{"a description removed in NodePing reads as removed", thePriorState, types.StringValue("text"), types.StringNull(), types.StringNull()},
+	}
+	for _, tt := range tests {
+		if got := keepIf(tt.holds, tt.current, tt.from, isEmptyDescription); !got.Equal(tt.want) {
+			t.Errorf("%s: got %s, want %s", tt.name, got, tt.want)
 		}
 	}
 }

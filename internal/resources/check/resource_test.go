@@ -26,9 +26,9 @@ import (
 // over a planned value because the response was silent fails the apply with
 // "Provider produced inconsistent result after apply".
 //
-// This cannot be covered by the acceptance suite: its mock echoes every
-// request key straight back, so an API that answers with less than it was
-// given is a shape those tests cannot express.
+// This cannot be covered by the acceptance suite: its mock answers with less
+// than it was given only for an attribute the check's type does not store,
+// and the plan refuses those before anything is sent (see refuseUnstored).
 func TestMapCheckToModelKeepsPlannedValuesTheAPIOmits(t *testing.T) {
 	t.Parallel()
 

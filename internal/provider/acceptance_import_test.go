@@ -24,9 +24,9 @@ import (
 type checkImportCase struct {
 	name string
 	body string
-	// ignore lists attributes that cannot survive a round trip because the API
-	// never echoes them back. Credentials only; anything else here is a bug
-	// being papered over.
+	// ignore lists attributes that cannot survive a round trip because the
+	// provider does not read them back, although NodePing returns them.
+	// Credentials only; anything else here is a bug being papered over.
 	ignore []string
 }
 

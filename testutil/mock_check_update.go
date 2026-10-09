@@ -19,7 +19,9 @@ package testutil
 //     "0" switch it off. true, "true" and "1" switch it on.
 //
 // And in parameters, everything that is not a top-level key:
-//   - Every parameter sent replaces the stored one; those left out stay.
+//   - A parameter the check's type after the update does not store is
+//     ignored, and what the check holds of it stays (mock_check_types.go).
+//   - Every other parameter sent replaces the stored one; those left out stay.
 //   - sendheaders, receiveheaders and data merge per key. A key sent as null
 //     or "" is deleted; the others are set. A smaller map, {}, null, "" or
 //     false keeps every stored key.
@@ -33,10 +35,16 @@ package testutil
 // 0 stored as "", ...) is not modelled.
 func mergeCheckUpdate(check, req map[string]interface{}) {
 	params := copyObject(check["parameters"])
+	typ := check["type"]
+	if sent, ok := req["type"]; ok {
+		typ = sent
+	}
 
 	for key, value := range req {
 		if !isCheckTopLevelField(key) {
-			mergeParameter(params, key, value)
+			if storesParameter(typ, key) {
+				mergeParameter(params, key, value)
+			}
 			continue
 		}
 
@@ -173,4 +181,15 @@ func (m *MockNodePingServer) SetCheckParameter(id, key string, value interface{}
 	params := copyObject(check["parameters"])
 	params[key] = value
 	check["parameters"] = params
+}
+
+// SetCheckValue sets one of a check's top-level values, such as its
+// description, the way someone editing it in the NodePing web interface
+// would: behind Terraform's back.
+func (m *MockNodePingServer) SetCheckValue(id, key string, value interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if check, ok := m.checks[id]; ok {
+		check[key] = value
+	}
 }
