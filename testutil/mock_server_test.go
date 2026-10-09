@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -143,5 +144,108 @@ func TestMockContactCreateWithoutAddresses(t *testing.T) {
 	}
 	if len(all) != 1 {
 		t.Errorf("the mock holds %d contacts, want only the address-less one", len(all))
+	}
+}
+
+// The mock keeps each object in the account whose customerid created it, and
+// answers a request for it from any other account the way NodePing answers an
+// ID it does not have.
+func TestMockKeepsObjectsInTheirAccount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		path    string
+		create  string
+		missing string // the answer to a read of an ID NodePing does not have
+		gone    string // the answer to a delete of one
+	}{
+		{"check", "/checks", `{"type":"HTTP","target":"https://example.com"}`, `{"error":"Error fetching check."}`, `{"error":"Unable to find that check"}`},
+		{"contact", "/contacts", `{"name":"sub"}`, `{}`, `{"error":"Unable to find that contact"}`},
+		{"contact group", "/contactgroups", `{"name":"sub"}`, `{}`, `{"error":"Unable to find group"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := NewMockNodePingServer()
+			t.Cleanup(m.Close)
+
+			var created map[string]interface{}
+			if err := json.Unmarshal([]byte(send(t, m, http.MethodPost, tt.path+"?customerid=SUB", tt.create)), &created); err != nil {
+				t.Fatal(err)
+			}
+			id, _ := created["_id"].(string)
+			if id == "" {
+				t.Fatalf("create answered %v", created)
+			}
+			if created["customer_id"] != "SUB" {
+				t.Errorf("customer_id is %v, want the SubAccount", created["customer_id"])
+			}
+			item := tt.path + "/" + id
+
+			if got := send(t, m, http.MethodGet, item, ""); got != tt.missing {
+				t.Errorf("the parent account read %s", got)
+			}
+			if got := send(t, m, http.MethodGet, item+"?customerid=OTHER", ""); got != tt.missing {
+				t.Errorf("another SubAccount read %s", got)
+			}
+			if got := send(t, m, http.MethodGet, item+"?customerid=SUB", ""); !strings.Contains(got, id) {
+				t.Errorf("the SubAccount read %s", got)
+			}
+			if got := send(t, m, http.MethodGet, tt.path, ""); got != "{}" {
+				t.Errorf("the parent account listed %s", got)
+			}
+			if got := send(t, m, http.MethodGet, tt.path+"?customerid=SUB", ""); !strings.Contains(got, id) {
+				t.Errorf("the SubAccount listed %s", got)
+			}
+			if got := send(t, m, http.MethodDelete, item, ""); got != tt.gone {
+				t.Errorf("the parent account's delete answered %s", got)
+			}
+			if got := send(t, m, http.MethodDelete, item+"?customerid=SUB", ""); strings.Contains(got, "error") {
+				t.Errorf("the SubAccount's delete answered %s", got)
+			}
+
+			want := []Request{
+				{http.MethodPost, tt.path, "SUB"},
+				{http.MethodGet, item, ""},
+				{http.MethodGet, item, "OTHER"},
+				{http.MethodGet, item, "SUB"},
+				{http.MethodGet, tt.path, ""},
+				{http.MethodGet, tt.path, "SUB"},
+				{http.MethodDelete, item, ""},
+				{http.MethodDelete, item, "SUB"},
+			}
+			if got := m.Requests(); !slices.Equal(got, want) {
+				t.Errorf("recorded requests\n%v\nwant\n%v", got, want)
+			}
+		})
+	}
+}
+
+// AddCheck seeds the parent account, and SetAccount moves an object between
+// accounts.
+func TestMockSetAccount(t *testing.T) {
+	t.Parallel()
+	m := NewMockNodePingServer()
+	t.Cleanup(m.Close)
+
+	m.AddCheck("SEEDED", map[string]interface{}{"_id": "SEEDED", "type": "HTTP"})
+	const missing = `{"error":"Error fetching check."}`
+
+	m.SetAccount("SEEDED", "SUB")
+	if got := send(t, m, http.MethodGet, "/checks/SEEDED", ""); got != missing {
+		t.Errorf("the parent account read a SubAccount's check: %s", got)
+	}
+	if got := send(t, m, http.MethodGet, "/checks/SEEDED?customerid=SUB", ""); !strings.Contains(got, "SEEDED") {
+		t.Errorf("the SubAccount read %s", got)
+	}
+
+	m.SetAccount("SEEDED", "")
+	if got := send(t, m, http.MethodGet, "/checks/SEEDED", ""); !strings.Contains(got, "SEEDED") {
+		t.Errorf("the parent account read %s", got)
+	}
+	if got := send(t, m, http.MethodGet, "/checks/SEEDED?customerid=SUB", ""); got != missing {
+		t.Errorf("the SubAccount read the parent account's check: %s", got)
 	}
 }

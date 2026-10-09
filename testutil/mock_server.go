@@ -18,6 +18,11 @@ type MockNodePingServer struct {
 	// checkUpdates holds every update request body per check, as sent.
 	checkUpdates  map[string][]map[string]interface{}
 	contactWrites []ContactWrite
+	// accounts holds the account of every object outside the parent account,
+	// by object ID. See account.
+	accounts map[string]string
+	// requests holds every request received, in order.
+	requests []Request
 }
 
 // ContactWrite is a create or update of a contact as the mock received it,
@@ -27,12 +32,22 @@ type ContactWrite struct {
 	Body   map[string]interface{}
 }
 
+// Request is a request as the mock received it.
+type Request struct {
+	Method string
+	Path   string
+	// CustomerID is the account the request addressed: its customerid, ""
+	// for the parent account.
+	CustomerID string
+}
+
 func NewMockNodePingServer() *MockNodePingServer {
 	m := &MockNodePingServer{
 		contacts:      make(map[string]map[string]interface{}),
 		checks:        make(map[string]map[string]interface{}),
 		contactgroups: make(map[string]map[string]interface{}),
 		checkUpdates:  make(map[string][]map[string]interface{}),
+		accounts:      make(map[string]string),
 	}
 
 	mux := http.NewServeMux()
@@ -43,8 +58,63 @@ func NewMockNodePingServer() *MockNodePingServer {
 	mux.HandleFunc("/contactgroups", m.handleContactGroups)
 	mux.HandleFunc("/contactgroups/", m.handleContactGroup)
 
-	m.Server = httptest.NewServer(mux)
+	m.Server = httptest.NewServer(m.record(mux))
 	return m
+}
+
+// record logs every request before next handles it.
+func (m *MockNodePingServer) record(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m.mu.Lock()
+		m.requests = append(m.requests, Request{Method: r.Method, Path: r.URL.Path, CustomerID: account(r)})
+		m.mu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// account returns the account r addresses: its customerid, "" for the parent
+// account.
+//
+// Every object lives in one account: the parent account, or the SubAccount
+// whose customerid the request that created it carried. A request sees only
+// the objects in the account it addresses. Any other ID is answered as one
+// NodePing does not have, and left out of lists.
+func account(r *http.Request) string {
+	return r.URL.Query().Get("customerid")
+}
+
+// inAccount reports whether the object id is in the account r addresses. The
+// caller holds m.mu.
+func (m *MockNodePingServer) inAccount(r *http.Request, id string) bool {
+	return m.accounts[id] == account(r)
+}
+
+// find returns the object id of objects if it is in the account r addresses.
+// The caller holds m.mu.
+func (m *MockNodePingServer) find(r *http.Request, objects map[string]map[string]interface{}, id string) (map[string]interface{}, bool) {
+	obj, ok := objects[id]
+	return obj, ok && m.inAccount(r, id)
+}
+
+// list returns the objects in the account r addresses. The caller holds m.mu.
+func (m *MockNodePingServer) list(r *http.Request, objects map[string]map[string]interface{}) map[string]map[string]interface{} {
+	out := make(map[string]map[string]interface{}, len(objects))
+	for id, obj := range objects {
+		if m.inAccount(r, id) {
+			out[id] = obj
+		}
+	}
+	return out
+}
+
+// created puts a new object in the account r addresses. NodePing reports the
+// account as the object's customer_id, which is "MOCK-CUSTOMER" in the parent
+// account. The caller holds m.mu.
+func (m *MockNodePingServer) created(r *http.Request, id string, obj map[string]interface{}) {
+	if acct := account(r); acct != "" {
+		m.accounts[id] = acct
+		obj["customer_id"] = acct
+	}
 }
 
 // writeOK answers with status 200 and body. NodePing never answers 404 for an
@@ -72,7 +142,7 @@ func (m *MockNodePingServer) handleContacts(w http.ResponseWriter, r *http.Reque
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(m.contacts)
+		_ = json.NewEncoder(w).Encode(m.list(r, m.contacts))
 
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -110,6 +180,7 @@ func (m *MockNodePingServer) handleContacts(w http.ResponseWriter, r *http.Reque
 			contact["addresses"] = addresses
 		}
 
+		m.created(r, id, contact)
 		m.contacts[id] = contact
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(contact)
@@ -127,7 +198,7 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 
 	switch r.Method {
 	case http.MethodGet:
-		contact, ok := m.contacts[id]
+		contact, ok := m.find(r, m.contacts, id)
 		if !ok {
 			writeOK(w, `{}`)
 			return
@@ -136,7 +207,7 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 		_ = json.NewEncoder(w).Encode(contact)
 
 	case http.MethodPut:
-		contact, ok := m.contacts[id]
+		contact, ok := m.find(r, m.contacts, id)
 		if !ok {
 			http.Error(w, `{"error": "contact not found"}`, http.StatusNotFound)
 			return
@@ -172,11 +243,12 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 		_ = json.NewEncoder(w).Encode(contact)
 
 	case http.MethodDelete:
-		if _, ok := m.contacts[id]; !ok {
+		if _, ok := m.find(r, m.contacts, id); !ok {
 			writeOK(w, `{"error":"Unable to find that contact"}`)
 			return
 		}
 		delete(m.contacts, id)
+		delete(m.accounts, id)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id})
 
@@ -320,7 +392,7 @@ func (m *MockNodePingServer) handleChecks(w http.ResponseWriter, r *http.Request
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(m.checks)
+		_ = json.NewEncoder(w).Encode(m.list(r, m.checks))
 
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -348,6 +420,7 @@ func (m *MockNodePingServer) handleChecks(w http.ResponseWriter, r *http.Request
 			}
 		}
 
+		m.created(r, id, check)
 		m.checks[id] = check
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(check)
@@ -365,7 +438,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 
 	switch r.Method {
 	case http.MethodGet:
-		check, ok := m.checks[id]
+		check, ok := m.find(r, m.checks, id)
 		if !ok {
 			writeOK(w, `{"error":"Error fetching check."}`)
 			return
@@ -374,7 +447,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 		_ = json.NewEncoder(w).Encode(check)
 
 	case http.MethodPut:
-		check, ok := m.checks[id]
+		check, ok := m.find(r, m.checks, id)
 		if !ok {
 			writeOK(w, `{"error":"Unable to load check."}`)
 			return
@@ -401,11 +474,12 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 		_ = json.NewEncoder(w).Encode(check)
 
 	case http.MethodDelete:
-		if _, ok := m.checks[id]; !ok {
+		if _, ok := m.find(r, m.checks, id); !ok {
 			writeOK(w, `{"error":"Unable to find that check"}`)
 			return
 		}
 		delete(m.checks, id)
+		delete(m.accounts, id)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id})
 
@@ -431,7 +505,7 @@ func (m *MockNodePingServer) handleContactGroups(w http.ResponseWriter, r *http.
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(m.contactgroups)
+		_ = json.NewEncoder(w).Encode(m.list(r, m.contactgroups))
 
 	case http.MethodPost:
 		var req map[string]interface{}
@@ -449,6 +523,7 @@ func (m *MockNodePingServer) handleContactGroups(w http.ResponseWriter, r *http.
 			"members":     contactGroupMembers(req),
 		}
 
+		m.created(r, id, group)
 		m.contactgroups[id] = group
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(group)
@@ -466,7 +541,7 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 
 	switch r.Method {
 	case http.MethodGet:
-		group, ok := m.contactgroups[id]
+		group, ok := m.find(r, m.contactgroups, id)
 		if !ok {
 			writeOK(w, `{}`)
 			return
@@ -475,7 +550,7 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 		_ = json.NewEncoder(w).Encode(group)
 
 	case http.MethodPut:
-		group, ok := m.contactgroups[id]
+		group, ok := m.find(r, m.contactgroups, id)
 		if !ok {
 			http.Error(w, `{"error": "contact group not found"}`, http.StatusNotFound)
 			return
@@ -499,11 +574,12 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 		_ = json.NewEncoder(w).Encode(group)
 
 	case http.MethodDelete:
-		if _, ok := m.contactgroups[id]; !ok {
+		if _, ok := m.find(r, m.contactgroups, id); !ok {
 			writeOK(w, `{"error":"Unable to find group"}`)
 			return
 		}
 		delete(m.contactgroups, id)
+		delete(m.accounts, id)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id})
 
@@ -544,6 +620,27 @@ func (m *MockNodePingServer) AddCheck(id string, check map[string]interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.checks[id] = check
+}
+
+// SetAccount moves the check, contact or contact group id to the account
+// customerID, "" for the parent account. AddCheck, AddContact and
+// AddContactGroup add to the parent account. The object's customer_id is left
+// as it is.
+func (m *MockNodePingServer) SetAccount(id, customerID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if customerID == "" {
+		delete(m.accounts, id)
+		return
+	}
+	m.accounts[id] = customerID
+}
+
+// Requests returns every request the mock has received, in order.
+func (m *MockNodePingServer) Requests() []Request {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]Request(nil), m.requests...)
 }
 
 func (m *MockNodePingServer) GetContact(id string) (map[string]interface{}, bool) {
