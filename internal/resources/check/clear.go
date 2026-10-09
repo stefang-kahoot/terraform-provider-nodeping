@@ -2,6 +2,7 @@ package check
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -22,6 +23,14 @@ import (
 func (r *CheckResource) buildUpdateRequest(ctx context.Context, plan, state *CheckResourceModel, diags *diag.Diagnostics) client.CheckUpdateRequest {
 	req := r.buildCreateRequest(ctx, plan, diags)
 	clearRemoved(&req, plan, state)
+
+	// An update ignores public sent as the boolean false (or 0); only the
+	// strings "false" and "0" switch public reports off, and "true" switches
+	// them on (finding 30). A create is left as it was: it sends the boolean,
+	// and a new check is not public unless told so.
+	if !plan.Public.IsNull() && !plan.Public.IsUnknown() {
+		req.Public = strconv.FormatBool(plan.Public.ValueBool())
+	}
 
 	notifications := req.Notifications
 	if notifications == nil {

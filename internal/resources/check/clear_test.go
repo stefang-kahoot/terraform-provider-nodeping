@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -367,5 +368,27 @@ func TestBuildUpdateRequestClearsTheDescription(t *testing.T) {
 				t.Errorf("description = %s, want %s", got, tt.want)
 			}
 		})
+	}
+}
+
+// An update sends public as a string, which NodePing honours both ways; a
+// create keeps the boolean.
+func TestPublicIsSentAsAStringOnUpdate(t *testing.T) {
+	t.Parallel()
+
+	for _, public := range []bool{true, false} {
+		model := unset()
+		model.Public = types.BoolValue(public)
+		r := &CheckResource{}
+		var diags diag.Diagnostics
+
+		update := requestJSON(t, r.buildUpdateRequest(context.Background(), model, unset(), &diags))
+		if want := `"` + strconv.FormatBool(public) + `"`; update["public"] != want {
+			t.Errorf("update sent public = %s, want %s", update["public"], want)
+		}
+		create := requestJSON(t, r.buildCreateRequest(context.Background(), model, &diags))
+		if want := strconv.FormatBool(public); create["public"] != want {
+			t.Errorf("create sent public = %s, want %s", create["public"], want)
+		}
 	}
 }

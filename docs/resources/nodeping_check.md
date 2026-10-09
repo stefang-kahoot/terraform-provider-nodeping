@@ -317,6 +317,8 @@ value NodePing stores as cleared, and only for a value the check has:
   one; it can only be overwritten. The provider overwrites it with a single
   space, which the resource, the data sources and an import all read as no
   description.
+- `public` switches public reports off when set to `false` or left out. An
+  update sends it as the string `"false"`: NodePing ignores the boolean.
 
 Removing any other argument (`homeloc`, `port`, `username`, `secure`,
 `verify`, the `dns*`, `snmp*` and database arguments, ...) has not been tried

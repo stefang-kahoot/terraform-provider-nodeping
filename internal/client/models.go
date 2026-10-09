@@ -227,7 +227,7 @@ type CheckCreateRequest struct {
 	Label          string                   `json:"label,omitempty"`
 	Interval       interface{}              `json:"interval,omitempty"`
 	Enabled        string                   `json:"enabled,omitempty"`
-	Public         interface{}              `json:"public,omitempty"`
+	Public         interface{}              `json:"public,omitempty"` // an update needs "true" or "false": NodePing ignores the boolean false
 	AutoDiag       interface{}              `json:"autodiag,omitempty"`
 	RunLocations   interface{}              `json:"runlocations,omitempty"` // [] clears them
 	HomeLoc        interface{}              `json:"homeloc,omitempty"`

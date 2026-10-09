@@ -439,3 +439,49 @@ resource "nodeping_check" "imported" {
 		},
 	})
 }
+
+// NodePing ignores public = false sent as a boolean (finding 30); only the
+// string "false" switches public reports off.
+func TestAccCheckResource_switchesPublicOff(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	config := func(public string) string {
+		return providerConfig(mock.URL()) + `
+resource "nodeping_check" "test" {
+  type   = "HTTP"
+  target = "https://example.com/health"
+  ` + public + `
+}
+`
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: config(`public = true`),
+				Check:  expectStored(mock, "nodeping_check.test", "top", "public", `true`),
+			},
+			{
+				Config: config(`public = false`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("nodeping_check.test", "public", "false"),
+					expectStored(mock, "nodeping_check.test", "top", "public", `false`),
+				),
+			},
+			{
+				Config: config(`public = true`),
+				Check:  expectStored(mock, "nodeping_check.test", "top", "public", `true`),
+			},
+			{
+				// Left out, public is false by default.
+				Config: config(``),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("nodeping_check.test", "public", "false"),
+					expectStored(mock, "nodeping_check.test", "top", "public", `false`),
+				),
+			},
+		},
+	})
+}
