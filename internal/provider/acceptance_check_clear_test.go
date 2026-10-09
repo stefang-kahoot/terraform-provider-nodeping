@@ -485,3 +485,87 @@ resource "nodeping_check" "test" {
 		},
 	})
 }
+
+// NodePing cannot remove a field, or a field's min, max or match, from a
+// check: every shape tried keeps it (finding 31). Removing one replaces the
+// check instead, and the plan says why in a warning. Changing a value and
+// adding a field still update it in place; see TestAccCheckResource_fields.
+func TestAccCheckResource_removingFieldsReplacesTheCheck(t *testing.T) {
+	tests := []struct {
+		name, before, after string
+		// stored is the new check's fields as NodePing holds them.
+		stored string
+	}{
+		{
+			name:   "a field",
+			before: `fields = { A = { name = "status", min = 200, max = 200 }, B = { name = "load.avg", max = 2.5 } }`,
+			after:  `fields = { A = { name = "status", min = 200, max = 200 } }`,
+			stored: `{"A":{"max":200,"min":200,"name":"status"}}`,
+		},
+		{
+			name:   "a field's min",
+			before: `fields = { A = { name = "status", min = 200, max = 200 } }`,
+			after:  `fields = { A = { name = "status", max = 200 } }`,
+			stored: `{"A":{"max":200,"name":"status"}}`,
+		},
+		{
+			name:   "a field's match",
+			before: `fields = { A = { name = "count", match = "1" } }`,
+			after:  `fields = { A = { name = "count" } }`,
+			stored: `{"A":{"name":"count"}}`,
+		},
+		{
+			name:   "every field",
+			before: `fields = { A = { name = "status", min = 200, max = 200 } }`,
+			after:  ``,
+			stored: ``,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := testutil.NewMockNodePingServer()
+			t.Cleanup(mock.Close)
+
+			config := func(fields string) string {
+				return providerConfig(mock.URL()) + `
+resource "nodeping_check" "test" {
+  type   = "HTTPPARSE"
+  target = "https://example.com/stats.json"
+  label  = "acc-fields"
+  ` + fields + `
+}
+`
+			}
+
+			var before, after string
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6ProviderFactories(),
+				Steps: []resource.TestStep{
+					{Config: config(tt.before), Check: storeCheckID("nodeping_check.test", &before)},
+					{
+						Config: config(tt.after),
+						ConfigPlanChecks: resource.ConfigPlanChecks{
+							PreApply: []plancheck.PlanCheck{
+								plancheck.ExpectResourceAction("nodeping_check.test", plancheck.ResourceActionDestroyBeforeCreate),
+							},
+						},
+						Check: resource.ComposeAggregateTestCheckFunc(
+							storeCheckID("nodeping_check.test", &after),
+							expectStored(mock, "nodeping_check.test", "param", "fields", tt.stored),
+							func(*terraform.State) error {
+								if before == after {
+									return fmt.Errorf("the check kept its ID %s, want a new check", before)
+								}
+								if _, ok := mock.GetCheck(before); ok {
+									return fmt.Errorf("the old check %s is still in NodePing", before)
+								}
+								return nil
+							},
+						),
+					},
+				},
+			})
+		})
+	}
+}

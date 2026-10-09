@@ -252,6 +252,12 @@ resource "nodeping_check" "service" {
   - `match` - (Optional) String the value has to match. `MYSQL`, `PGSQL` and
     `MONGODB` only.
 
+  Changing a field's values or adding a field updates the check in place.
+  Removing a field, or a field's `min`, `max` or `match`, replaces the check:
+  NodePing cannot remove them from an existing check (an update keeps them),
+  so Terraform deletes it and creates a new one with a new ID, and the plan
+  says so in a warning. Put them back in the configuration to keep the check.
+
 ### DNS Arguments
 
 - `dnstype` - (Optional) DNS query type: `ANY`, `A`, `AAAA`, `CNAME`, `MX`, `NS`, `PTR`, `SOA`, `SRV`, `TXT`.
@@ -319,6 +325,9 @@ value NodePing stores as cleared, and only for a value the check has:
   description.
 - `public` switches public reports off when set to `false` or left out. An
   update sends it as the string `"false"`: NodePing ignores the boolean.
+- `fields`: a field, or a field's `min`, `max` or `match`, cannot be removed
+  from an existing check. Removing one replaces the check; see
+  [Parse Arguments](#parse-arguments).
 
 Removing any other argument (`homeloc`, `port`, `username`, `secure`,
 `verify`, the `dns*`, `snmp*` and database arguments, ...) has not been tried

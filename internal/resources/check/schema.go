@@ -329,9 +329,10 @@ terraform import nodeping_check.example 201205050153W2Q4C-0J2HSIRF
 				Optional:    true,
 			},
 			"fields": schema.MapNestedAttribute{
-				Description:         "Values to parse out of the response and the range or string each must match, keyed by NodePing's key for the field (any string; the web interface makes up a random one). HTTPPARSE, SNMP and the database types.",
-				MarkdownDescription: "Values to parse out of the response and the range or string each must match, keyed by NodePing's key for the field (any string; the web interface makes up a random one). `HTTPPARSE`, `SNMP` and the database types.",
+				Description:         "Values to parse out of the response and the range or string each must match, keyed by NodePing's key for the field (any string; the web interface makes up a random one). HTTPPARSE, SNMP and the database types. Removing a field, or a field's min, max or match, replaces the check: NodePing cannot remove them from an existing one.",
+				MarkdownDescription: "Values to parse out of the response and the range or string each must match, keyed by NodePing's key for the field (any string; the web interface makes up a random one). `HTTPPARSE`, `SNMP` and the database types. Removing a field, or a field's `min`, `max` or `match`, replaces the check: NodePing cannot remove them from an existing one.",
 				Optional:            true,
+				PlanModifiers:       []planmodifier.Map{replaceOnRemovedFields()},
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"name": schema.StringAttribute{
