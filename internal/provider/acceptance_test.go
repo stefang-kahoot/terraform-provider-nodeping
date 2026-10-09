@@ -770,10 +770,10 @@ data "nodeping_check" "login" {
 }
 
 // Regression test: a check with a password used to fail every apply with
-// ".password: inconsistent values for sensitive attribute". NodePing does not
-// echo credentials back, so mapping the response nulled the configured value.
-// Broken since the initial commit; any check type using password auth
-// (MYSQL, PGSQL, IMAP4, POP3, SMTP, FTP, SSH, HTTPADV) was affected.
+// ".password: inconsistent values for sensitive attribute". The provider does
+// not read credentials back from NodePing's answer, so mapping it nulled the
+// configured value. Broken since the initial commit; every check type that
+// stores a password (FTP, IMAP4, MYSQL, POP3, SMTP and SSH) was affected.
 func TestAccCheckResource_passwordSurvivesApply(t *testing.T) {
 	mock := testutil.NewMockNodePingServer()
 	t.Cleanup(mock.Close)

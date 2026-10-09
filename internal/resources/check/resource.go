@@ -779,8 +779,8 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 // back null and produces no plan.
 //
 // What remains below is only what a resource needs and a data source does
-// not: a plan or prior state to stay consistent with, and credentials the API
-// does not echo. holds says which of the two the model carries; see keep.
+// not: a plan or prior state to stay consistent with, and credentials it does
+// not read back. holds says which of the two the model carries; see keep.
 func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check, model *CheckResourceModel, holds modelHolds, diags *diag.Diagnostics) {
 	a := checkattr.FromAPI(ctx, check, diags)
 
@@ -871,15 +871,17 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 		model.Tags = types.ListNull(types.StringType)
 	}
 
-	// NodePing never returns the password, so there is nothing to map here.
+	// The password is not read back. NodePing does return it, as it was sent
+	// (probed 2026-10-09 on FTP, IMAP4, MYSQL, POP3, SMTP and SSH checks), but
+	// it is a secret, and checkattr leaves it out for the data sources' sake.
 	// Callers restore the configured value; see preservePassword.
 	model.Password = types.StringNull()
 
 	// snmpcom is left exactly as the caller had it. It is an SNMP community
 	// string -- a shared secret in all but name, which is why checkattr omits
-	// it -- so Create, Read and Update keep the configured value and an import
-	// leaves it null for the configuration to supply, the same bargain as
-	// password.
+	// it, although NodePing returns it as sent (probed 2026-10-09) -- so
+	// Create, Read and Update keep the configured value and an import leaves
+	// it null for the configuration to supply, the same bargain as password.
 }
 
 // modelHolds is what the model handed to mapCheckToModel holds beforehand.
@@ -999,10 +1001,10 @@ func fieldsToAPI(in map[string]checkattr.FieldModel) map[string]client.CheckFiel
 	return out
 }
 
-// preservePassword restores a write-only credential after mapCheckToModel.
-// NodePing does not echo the password back, so mapping the response would
-// replace the configured value with null and fail the apply with
-// "inconsistent values for sensitive attribute".
+// preservePassword restores the password after mapCheckToModel, which does
+// not read it from NodePing's answer: left null, the configured value would
+// be lost, and the apply would fail with "inconsistent values for sensitive
+// attribute".
 func preservePassword(model *CheckResourceModel, configured types.String) {
 	if !configured.IsNull() && !configured.IsUnknown() {
 		model.Password = configured
