@@ -40,6 +40,8 @@ type Client struct {
 	userAgent    string
 	defaultTags  []string
 	ignoreMute   bool
+	// readBackWaits are the waits before each read of ReadCheckBack.
+	readBackWaits []time.Duration
 
 	// The lists that confirm a check, contact or contact group is gone,
 	// shared for as long as the client lives. See listCache.
@@ -63,6 +65,9 @@ type ClientConfig struct {
 	// configuration does not set one to NodePing. See the provider's
 	// ignore_mute.
 	IgnoreMute bool
+	// ReadBackWaits are the waits before each read of ReadCheckBack. Left
+	// empty, they are 1, 2, 4 and 8 seconds.
+	ReadBackWaits []time.Duration
 }
 
 func NewClient(cfg ClientConfig) *Client {
@@ -87,6 +92,9 @@ func NewClient(cfg ClientConfig) *Client {
 	if cfg.UserAgent == "" {
 		cfg.UserAgent = "terraform-provider-nodeping"
 	}
+	if len(cfg.ReadBackWaits) == 0 {
+		cfg.ReadBackWaits = defaultReadBackWaits
+	}
 
 	return &Client{
 		httpClient: &http.Client{
@@ -102,6 +110,8 @@ func NewClient(cfg ClientConfig) *Client {
 		userAgent:    cfg.UserAgent,
 		defaultTags:  cfg.DefaultTags,
 		ignoreMute:   cfg.IgnoreMute,
+		// A copy, so that changing the slice passed in changes nothing here.
+		readBackWaits: append([]time.Duration(nil), cfg.ReadBackWaits...),
 	}
 }
 

@@ -196,6 +196,41 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
+	applied := r.updatedModel(ctx, check, plan, ignoreMute, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// NodePing sometimes answers with the check as it was before the update;
+	// see stale_answer.go. The check's modified before the update is the
+	// prior state's, which the refresh before this plan read from NodePing.
+	// The plan holds the same value, pinned by UseStateForUnknown. An apply
+	// keeps the modified it planned (see updatedModel), so only a refresh
+	// brings the state's up to date: after -refresh=false it may be older
+	// than NodePing's, and a stale answer then looks fresh and fails as it
+	// always has.
+	if answerMayBeStale(state.Modified, check) && !givesThePlan(ctx, req.Plan, applied) {
+		label := plan.Label
+		if label.IsUnknown() {
+			label = state.Label
+		}
+		applied = r.readUpdateBack(ctx, req.Plan, plan, state.ID.ValueString(), label.ValueString(),
+			state.Modified.ValueInt64(), ignoreMute, &resp.Diagnostics)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
+	tflog.Debug(ctx, "Updated check", map[string]interface{}{
+		"id": check.ID,
+	})
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &applied)...)
+}
+
+// updatedModel maps NodePing's answer to an update onto the plan, the way
+// Update reports it.
+func (r *CheckResource) updatedModel(ctx context.Context, check *client.Check, plan CheckResourceModel, ignoreMute bool, diags *diag.Diagnostics) CheckResourceModel {
 	// Preserve the original target from plan if API normalized it
 	originalTarget := plan.Target
 	// Preserve computed fields from plan to avoid "inconsistent result after apply" errors
@@ -206,9 +241,9 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	plannedPassword := plan.Password
 	plannedMute := plan.Mute
 
-	r.mapCheckToModel(ctx, check, &plan, thePlan, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
-		return
+	r.mapCheckToModel(ctx, check, &plan, thePlan, diags)
+	if diags.HasError() {
+		return plan
 	}
 	preservePassword(&plan, plannedPassword)
 
@@ -246,11 +281,7 @@ func (r *CheckResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		plan.TagsAll = plannedTagsAll
 	}
 
-	tflog.Debug(ctx, "Updated check", map[string]interface{}{
-		"id": check.ID,
-	})
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	return plan
 }
 
 func (r *CheckResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
