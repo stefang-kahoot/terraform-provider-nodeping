@@ -131,6 +131,7 @@ func guardClient(url string) *client.Client {
 		APIToken: guardToken,
 		BaseURL:  url,
 		// A list that gets no answer is retried; not for seconds here.
+		MaxRetries:   client.DefaultMaxRetries,
 		RetryMinWait: time.Millisecond,
 		RetryMaxWait: time.Millisecond,
 	})

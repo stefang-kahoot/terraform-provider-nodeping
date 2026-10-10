@@ -2,14 +2,20 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"slices"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
@@ -83,6 +89,8 @@ provider "nodeping" {
 - ` + "`NODEPING_CUSTOMER_ID`" + ` - Default SubAccount customer ID
 - ` + "`NODEPING_API_URL`" + ` - API base URL (for testing)
 
+Every setting must be known when Terraform plans. One taken from a resource that is still to be created, such as ` + "`api_token = terraform_data.token.output`" + `, fails the plan, and its environment variable does not stand in for it, since the configured value overrides it. Apply that resource first, for example with ` + "`-target`" + `.
+
 ## Multi-Account Usage
 
 Use provider aliases to manage multiple accounts:
@@ -154,20 +162,24 @@ Terraform then leaves ` + "`mute`" + ` alone on every check, and every contact `
 				Optional:            true,
 			},
 			"rate_limit": schema.Float64Attribute{
-				Description: "Maximum requests per second to the NodePing API. Defaults to 10.",
+				Description: "Maximum requests per second to the NodePing API, greater than 0. Defaults to 10.",
 				Optional:    true,
+				Validators:  []validator.Float64{positiveFloat64{}},
 			},
 			"max_retries": schema.Int64Attribute{
-				Description: "Maximum number of retries for a failed request: one answered 429 or with a server error, or whose connection failed. A request that creates something is retried only if it cannot have reached NodePing. Defaults to 3.",
+				Description: "Maximum number of retries for a failed request: one answered 429 or with a server error, or whose connection failed. A request that creates something is retried only if it cannot have reached NodePing. 0 turns retries off. Defaults to 3.",
 				Optional:    true,
+				Validators:  []validator.Int64{int64validator.AtLeast(0)},
 			},
 			"retry_wait_min": schema.Int64Attribute{
 				Description: "Minimum wait time in seconds between retries. Defaults to 1.",
 				Optional:    true,
+				Validators:  []validator.Int64{int64validator.AtLeast(0)},
 			},
 			"retry_wait_max": schema.Int64Attribute{
 				Description: "Maximum wait time in seconds between retries, also for a 429 that asks for a longer wait in Retry-After. Defaults to 30.",
 				Optional:    true,
+				Validators:  []validator.Int64{int64validator.AtLeast(0)},
 			},
 			"default_tags": schema.ListAttribute{
 				Description:         "Default tags to apply to all resources that support tags (e.g., checks). These tags are merged with resource-specific tags.",
@@ -189,6 +201,11 @@ func (p *NodePingProvider) Configure(ctx context.Context, req provider.Configure
 
 	var config NodePingProviderModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(unknownSettings(config)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -276,6 +293,49 @@ func (p *NodePingProvider) Configure(ctx context.Context, req provider.Configure
 
 	resp.DataSourceData = c
 	resp.ResourceData = c
+}
+
+// unknownSettings returns an error for every setting not known yet, such as
+// one taken from a resource that is still to be created. Read as it is, it
+// would be "" or 0, and the plan would be made for a client other than the
+// one the apply gets. An environment variable cannot stand in for it either,
+// since the configured value overrides it once known.
+func unknownSettings(config NodePingProviderModel) diag.Diagnostics {
+	settings := []struct {
+		name    string
+		unknown bool
+		// env is the environment variable that stands in for the setting
+		// when the configuration leaves it out, if there is one.
+		env string
+	}{
+		{"api_token", config.APIToken.IsUnknown(), "NODEPING_API_TOKEN"},
+		{"customer_id", config.CustomerID.IsUnknown(), "NODEPING_CUSTOMER_ID"},
+		{"api_url", config.APIURL.IsUnknown(), "NODEPING_API_URL"},
+		{"rate_limit", config.RateLimit.IsUnknown(), ""},
+		{"max_retries", config.MaxRetries.IsUnknown(), ""},
+		{"retry_wait_min", config.RetryWaitMin.IsUnknown(), ""},
+		{"retry_wait_max", config.RetryWaitMax.IsUnknown(), ""},
+		{"default_tags", config.DefaultTags.IsUnknown() || slices.ContainsFunc(config.DefaultTags.Elements(), attr.Value.IsUnknown), ""},
+		{"ignore_mute", config.IgnoreMute.IsUnknown(), ""},
+	}
+
+	var diags diag.Diagnostics
+	for _, s := range settings {
+		if !s.unknown {
+			continue
+		}
+		or := ""
+		if s.env != "" {
+			or = fmt.Sprintf(", or leave it out and set the %s environment variable", s.env)
+		}
+		diags.AddAttributeError(
+			path.Root(s.name),
+			"Unknown NodePing Provider Setting",
+			fmt.Sprintf("%s is known only after apply, so the provider cannot set up its NodePing API client for the plan. "+
+				"Apply what it comes from first, for example with -target, or set it to a value known before apply%s.", s.name, or),
+		)
+	}
+	return diags
 }
 
 func (p *NodePingProvider) Resources(ctx context.Context) []func() resource.Resource {
