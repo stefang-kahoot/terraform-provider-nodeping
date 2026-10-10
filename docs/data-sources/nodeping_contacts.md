@@ -37,12 +37,12 @@ This data source has no required arguments.
 
 ## Attribute Reference
 
-- `contacts` - List of all contacts. Each contact contains:
+- `contacts` - All contacts, ordered by ID. Each contact contains:
   - `id` - The unique identifier of the contact.
   - `customer_id` - The customer ID (account ID) that owns this contact.
   - `name` - The name of the contact.
   - `custrole` - The permission role.
-  - `addresses` - List of contact addresses. Each address contains:
+  - `addresses` - The contact's addresses, ordered by ID. Each address contains:
     - `id` - The unique identifier of the address.
     - `type` - The type of address.
     - `address` - The address value (sensitive).
