@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -141,6 +142,31 @@ func TestDoRequestRetriesErrorStatuses(t *testing.T) {
 			}
 			if _, ok := errors.AsType[*UncertainWriteError](err); ok != tt.wantUncertain {
 				t.Errorf("expected UncertainWriteError %v, got %T (%v)", tt.wantUncertain, err, err)
+			}
+		})
+	}
+}
+
+// With no retries, a request that fails is sent once. Less than 0 retries
+// still sends it, rather than not at all.
+func TestDoRequestWithoutRetries(t *testing.T) {
+	for _, maxRetries := range []int{0, -1} {
+		t.Run(strconv.Itoa(maxRetries), func(t *testing.T) {
+			var attempts atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts.Add(1)
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"bug"}`))
+			}))
+			t.Cleanup(server.Close)
+
+			_, err := retryClient(server.URL, maxRetries).GetCheck(context.Background(), "X")
+
+			if got := attempts.Load(); got != 1 {
+				t.Errorf("expected 1 attempt, got %d", got)
+			}
+			if apiErr, ok := errors.AsType[*APIError](err); !ok || apiErr.StatusCode != http.StatusInternalServerError {
+				t.Errorf("expected the 500, got %T (%v)", err, err)
 			}
 		})
 	}

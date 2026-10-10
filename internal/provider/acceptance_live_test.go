@@ -103,9 +103,14 @@ func useOnlyLiveToken(t *testing.T, token string) {
 }
 
 // apiClient is a client for the account, configured as the provider is: the
-// default API URL and no customer ID.
+// default API URL, no customer ID and the default retries.
 func (a liveAccount) apiClient() *client.Client {
-	return client.NewClient(client.ClientConfig{APIToken: a.token})
+	return client.NewClient(client.ClientConfig{
+		APIToken:     a.token,
+		MaxRetries:   client.DefaultMaxRetries,
+		RetryMinWait: client.DefaultRetryMinWait,
+		RetryMaxWait: client.DefaultRetryMaxWait,
+	})
 }
 
 // redact returns err's message without the token, should NodePing ever

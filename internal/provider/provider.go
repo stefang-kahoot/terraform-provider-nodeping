@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -14,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
@@ -160,20 +162,24 @@ Terraform then leaves ` + "`mute`" + ` alone on every check, and every contact `
 				Optional:            true,
 			},
 			"rate_limit": schema.Float64Attribute{
-				Description: "Maximum requests per second to the NodePing API. Defaults to 10.",
+				Description: "Maximum requests per second to the NodePing API, greater than 0. Defaults to 10.",
 				Optional:    true,
+				Validators:  []validator.Float64{positiveFloat64{}},
 			},
 			"max_retries": schema.Int64Attribute{
-				Description: "Maximum number of retries for a failed request: one answered 429 or with a server error, or whose connection failed. A request that creates something is retried only if it cannot have reached NodePing. Defaults to 3.",
+				Description: "Maximum number of retries for a failed request: one answered 429 or with a server error, or whose connection failed. A request that creates something is retried only if it cannot have reached NodePing. 0 turns retries off. Defaults to 3.",
 				Optional:    true,
+				Validators:  []validator.Int64{int64validator.AtLeast(0)},
 			},
 			"retry_wait_min": schema.Int64Attribute{
 				Description: "Minimum wait time in seconds between retries. Defaults to 1.",
 				Optional:    true,
+				Validators:  []validator.Int64{int64validator.AtLeast(0)},
 			},
 			"retry_wait_max": schema.Int64Attribute{
 				Description: "Maximum wait time in seconds between retries, also for a 429 that asks for a longer wait in Retry-After. Defaults to 30.",
 				Optional:    true,
+				Validators:  []validator.Int64{int64validator.AtLeast(0)},
 			},
 			"default_tags": schema.ListAttribute{
 				Description:         "Default tags to apply to all resources that support tags (e.g., checks). These tags are merged with resource-specific tags.",

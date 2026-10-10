@@ -97,12 +97,12 @@ provider "nodeping" {
   # Default: https://api.nodeping.com/api/1
   api_url = "https://api.nodeping.com/api/1"
 
-  # Optional: Rate limiting (requests per second)
+  # Optional: Rate limiting (requests per second, greater than 0)
   # Default: 10
   rate_limit = 10
 
   # Optional: Retry configuration
-  max_retries    = 3   # Maximum retry attempts
+  max_retries    = 3   # Maximum retry attempts; 0 turns retries off
   retry_wait_min = 1   # Minimum wait between retries (seconds)
   retry_wait_max = 30  # Maximum wait between retries (seconds)
 }
