@@ -23,6 +23,7 @@ does, and it is the source for a support request to NodePing.
 | 9 | An update is sometimes answered with the check as it was before | Returns the check "created or modified" | Answer with the updated check | None |
 | 10 | A parameter the check type does not take is dropped without a word | Which parameters each type takes, nearly right | Say so in the answer, and fix the per-type lists | Low |
 | 11 | A type change freezes the old type's parameters | Nothing | Document it, or let an update clear them | Low |
+| 12 | A check created without `sens` holds none | "Defaults to 2" | Store the default, or document that none means 2 | Low |
 
 ## 1. Errors come back with HTTP 200
 
@@ -200,6 +201,20 @@ parameters are in use.
 keeps it as it is. Adding or changing it fails the plan, as in #10. Removing it
 replaces the check, with a warning in the plan.
 
+## 12. A check created without `sens` holds none
+
+The docs say `sens` "Defaults to 2". A `POST /checks` that leaves `sens` out
+creates a check that holds no `sens` at all: its `parameters` held only
+`target` and `threshold` when we tried it in October 2026. A check made in the
+web UI holds `sens`.
+
+**Effect:** a client that reads such a check sees no `sens`, and has to know
+the default to tell what the check runs with. The provider read it as unset,
+so no configuration could import the check without a plan that wrote `sens`.
+
+**Provider:** reads a missing `sens` as 2, the documented default, in the check
+resource and the data sources alike.
+
 ## Raising it with NodePing
 
 The API has carried version 1 in its URL since the start, and its changelog
@@ -207,9 +222,10 @@ records only additions (latest 2025-08-14). Other clients probably depend on
 some of these behaviours, so the request should be split by risk:
 
 1. **Documentation only, no risk:** #2's current answers, #4, #6, #7, #8,
-   #11, and #10's per-type lists.
-2. **Small fixes:** #3's message, #5 in the web UI, #9's stale answers, and a
-   note in the answer when #10 drops a parameter.
+   #11, what #12's missing `sens` means, and #10's per-type lists.
+2. **Small fixes:** #3's message, #5 in the web UI, #9's stale answers, #12's
+   default stored on create, and a note in the answer when #10 drops a
+   parameter.
 3. **Breaking:** real status codes (#1) and 404s (#2). Ask whether they
    would offer these as an opt-in (a request header or query parameter) or in
    an `/api/2`, rather than changing `/api/1`. Note that #1 is also a docs

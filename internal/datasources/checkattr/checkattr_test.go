@@ -150,6 +150,51 @@ func TestOptionalWarningDays(t *testing.T) {
 	}
 }
 
+// A check created through the API without sens holds none, and reads as
+// NodePing's default. A sens it does hold reads as it is.
+func TestSens(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    interface{}
+		wantNull bool
+		want     int64
+	}{
+		{name: "nil is the default", input: nil, want: DefaultSens},
+		{name: "number", input: float64(3), want: 3},
+		{name: "numeric string", input: "1", want: 1},
+		{name: "non-numeric string is null", input: "abc", wantNull: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := Sens(tt.input)
+			if tt.wantNull {
+				if !got.IsNull() {
+					t.Errorf("Sens(%#v) = %v, want null", tt.input, got)
+				}
+				return
+			}
+			if got.IsNull() || got.ValueInt64() != tt.want {
+				t.Errorf("Sens(%#v) = %v, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+
+	var check client.Check
+	body := `{"_id": "CHK1", "type": "HTTP", "parameters": {"target": "https://example.com/", "threshold": 5}}`
+	if err := json.Unmarshal([]byte(body), &check); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	m := FromAPI(context.Background(), &check, new(diag.Diagnostics))
+	if want := types.Int64Value(2); !m.Sens.Equal(want) {
+		t.Errorf("a check without sens reads as %s, want %s", m.Sens, want)
+	}
+}
+
 func TestOptionalString(t *testing.T) {
 	t.Parallel()
 
