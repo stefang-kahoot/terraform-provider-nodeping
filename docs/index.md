@@ -65,6 +65,8 @@ provider "nodeping" {
 - `NODEPING_CUSTOMER_ID` - Default SubAccount customer ID
 - `NODEPING_API_URL` - API base URL (for testing)
 
+Every setting must be known when Terraform plans. One taken from a resource that is still to be created, such as `api_token = terraform_data.token.output`, fails the plan, and its environment variable does not stand in for it, since the configured value overrides it. Apply that resource first, for example with `-target`.
+
 ## Multi-Account Usage
 
 Use provider aliases to manage multiple accounts or subaccounts:

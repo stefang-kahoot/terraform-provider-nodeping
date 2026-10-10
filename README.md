@@ -79,6 +79,8 @@ export NODEPING_API_TOKEN="your-api-token"
 1. Provider block configuration (highest priority)
 2. Environment variables (fallback)
 
+Every setting must be known when Terraform plans. One taken from a resource that is still to be created, such as `api_token = terraform_data.token.output`, fails the plan, and its environment variable does not stand in for it, since the configured value overrides it. Apply that resource first, for example with `-target`.
+
 ## Provider Configuration
 
 ```hcl
