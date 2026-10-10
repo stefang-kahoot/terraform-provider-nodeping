@@ -163,7 +163,7 @@ func Attributes() map[string]schema.Attribute {
 		"public":      b("Whether the check has a public reports page."),
 		"interval":    schema.Float64Attribute{Description: "How often the check runs, in minutes.", Computed: true},
 		"threshold":   i64("Timeout in seconds for the check."),
-		"sens":        i64("Number of rechecks before the check is considered down."),
+		"sens":        i64("Number of rechecks before the check is considered down. A check that holds none reads as 2, NodePing's default."),
 		"mute":        b("Whether notifications for this check are muted."),
 		"autodiag":    b("Whether automatic diagnostics are enabled."),
 		"dep":         str("ID of the check this one depends on for notifications."),
@@ -317,6 +317,23 @@ func OptionalFloat64(v interface{}) types.Float64 {
 	}
 }
 
+// DefaultSens is the sens NodePing's API documentation gives a check created
+// without one. The nodeping_check resource plans it for a configuration that
+// leaves sens out.
+const DefaultSens = 2
+
+// Sens maps sens like OptionalInt64, except that a check without one reads as
+// DefaultSens. A check created through the API without sens holds none
+// (observed October 2026; one made in the web interface holds it). Read as
+// null, such a check could not be imported without a plan that writes sens:
+// the resource plans DefaultSens whenever the configuration has none.
+func Sens(v interface{}) types.Int64 {
+	if v == nil {
+		return types.Int64Value(DefaultSens)
+	}
+	return OptionalInt64(v)
+}
+
 // OptionalWarningDays maps warningdays like OptionalInt64, except that 0 is
 // null too. The web interface saves an empty "days before expiration" field as
 // 0, while checks written through the API carry "" -- both mean the check
@@ -414,7 +431,7 @@ func FromAPI(ctx context.Context, check *client.Check, diags *diag.Diagnostics) 
 		Enabled:     types.BoolValue(check.Enabled == "active"),
 		Public:      types.BoolValue(check.Public),
 		Threshold:   OptionalInt64(p.Threshold),
-		Sens:        OptionalInt64(p.Sens),
+		Sens:        Sens(p.Sens),
 		Mute:        types.BoolValue(Bool(check.Mute)),
 		AutoDiag:    types.BoolValue(check.AutoDiag),
 		State:       types.Int64Value(int64(check.State)),
