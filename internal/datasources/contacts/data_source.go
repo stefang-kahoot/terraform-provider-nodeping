@@ -3,6 +3,7 @@ package contacts
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -63,7 +64,7 @@ output "contact_ids" {
 `,
 		Attributes: map[string]schema.Attribute{
 			"contacts": schema.ListNestedAttribute{
-				Description: "List of contacts.",
+				Description: "All contacts, ordered by ID.",
 				Computed:    true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
@@ -84,7 +85,7 @@ output "contact_ids" {
 							Computed:    true,
 						},
 						"addresses": schema.ListNestedAttribute{
-							Description: "Contact addresses.",
+							Description: "Contact addresses, ordered by ID.",
 							Computed:    true,
 							NestedObject: schema.NestedAttributeObject{
 								Attributes: map[string]schema.Attribute{
@@ -143,18 +144,29 @@ func (d *ContactsDataSource) Read(ctx context.Context, req datasource.ReadReques
 	var state ContactsDataSourceModel
 	state.Contacts = make([]ContactModel, 0, len(contacts))
 
-	for _, contact := range contacts {
+	// The API returns contacts, and each contact's addresses, as maps, whose
+	// iteration order is random in Go. Sorting by ID keeps the data source
+	// output stable between plans.
+	for _, id := range sortedKeys(contacts) {
+		contact := contacts[id]
+
+		contactID := contact.ID
+		if contactID == "" {
+			contactID = id
+		}
+
 		contactModel := ContactModel{
-			ID:         types.StringValue(contact.ID),
+			ID:         types.StringValue(contactID),
 			CustomerID: types.StringValue(contact.CustomerID),
 			Name:       types.StringValue(contact.Name),
 			CustRole:   types.StringValue(contact.CustRole),
 		}
 
 		contactModel.Addresses = make([]AddressModel, 0, len(contact.Addresses))
-		for id, addr := range contact.Addresses {
+		for _, addrID := range sortedKeys(contact.Addresses) {
+			addr := contact.Addresses[addrID]
 			contactModel.Addresses = append(contactModel.Addresses, AddressModel{
-				ID:      types.StringValue(id),
+				ID:      types.StringValue(addrID),
 				Type:    types.StringValue(addr.Type),
 				Address: types.StringValue(addr.Address),
 			})
@@ -164,4 +176,13 @@ func (d *ContactsDataSource) Read(ctx context.Context, req datasource.ReadReques
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
