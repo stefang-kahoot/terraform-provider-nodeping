@@ -587,14 +587,15 @@ resource "nodeping_contactgroup" "idempotent" {
 	})
 }
 
-// A group with neither a name nor members is valid per the API; both
-// attributes are optional.
+// A group with a name and no members is the smallest the schema allows:
+// members is optional.
 func TestAccContactGroupResource_minimal(t *testing.T) {
 	mock := testutil.NewMockNodePingServer()
 	t.Cleanup(mock.Close)
 
 	config := providerConfig(mock.URL()) + `
 resource "nodeping_contactgroup" "minimal" {
+  name = "acc-group-minimal"
 }
 `
 

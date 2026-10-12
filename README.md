@@ -244,7 +244,7 @@ resource "nodeping_contact" "example" {
 
 | Attribute | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | string | No | Contact name/label |
+| `name` | string | Yes | Contact name/label. Cannot be empty or only whitespace: NodePing can change a name, but not remove it |
 | `custrole` | string | No | Permission role: `edit`, `view`, `notify` (default: `notify`) |
 | `address` | block | No | Notification addresses (see below) |
 
@@ -290,6 +290,8 @@ Manages a NodePing monitoring check.
 ### nodeping_contactgroup
 
 Manages a NodePing contact group. Members are contact **address** IDs, not contact IDs.
+`name` is required and cannot be empty or only whitespace: NodePing can change a
+group's name, but not remove it.
 
 **Example:**
 
@@ -398,6 +400,10 @@ terraform import nodeping_contact.example      201205050153W2Q4C-BKPGH
 terraform import nodeping_check.example        201205050153W2Q4C-0J2HSIRF
 terraform import nodeping_contactgroup.example 201205050153W2Q4C-G-1ZIYU
 ```
+
+A contact or contact group that NodePing holds without a name, created outside
+Terraform, imports with an empty name. The plan after the import then updates
+it in place to set the configuration's `name`.
 
 ### Import from a SubAccount
 

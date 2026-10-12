@@ -169,8 +169,12 @@ func (m *MockNodePingServer) handleContacts(w http.ResponseWriter, r *http.Reque
 			"_id":         id,
 			"type":        "contact",
 			"customer_id": "MOCK-CUSTOMER",
-			"name":        req["name"],
 			"custrole":    req["custrole"],
+		}
+		// A contact created without a name, or with "" or null, holds no
+		// name key.
+		if name := req["name"]; name != nil && name != "" {
+			contact["name"] = name
 		}
 
 		if len(newAddrs) > 0 {
@@ -229,7 +233,10 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 			return
 		}
 
-		if name, ok := req["name"]; ok {
+		// Nothing clears a contact's name (probed 2026-10-12): an update
+		// that leaves it out, or sends "", null or false, keeps it. " " is
+		// stored.
+		if name, ok := req["name"].(string); ok && name != "" {
 			contact["name"] = name
 		}
 		if custrole, ok := req["custrole"]; ok {
@@ -527,8 +534,12 @@ func (m *MockNodePingServer) handleContactGroups(w http.ResponseWriter, r *http.
 			"_id":         id,
 			"type":        "group",
 			"customer_id": "MOCK-CUSTOMER",
-			"name":        req["name"],
 			"members":     contactGroupMembers(req),
+		}
+		// A group created without a name holds no name key. Unlike a
+		// contact, one created with "" or null holds that.
+		if name, ok := req["name"]; ok {
+			group["name"] = name
 		}
 
 		m.created(r, id, group)
@@ -570,7 +581,11 @@ func (m *MockNodePingServer) handleContactGroup(w http.ResponseWriter, r *http.R
 			return
 		}
 
-		if name, ok := req["name"]; ok {
+		// Nothing clears a group's name (probed 2026-10-12): an update that
+		// leaves it out, or sends "", null, " ", false or 0, keeps it. Unlike
+		// a contact's, " " is ignored too; other blank strings were not
+		// tried.
+		if name, ok := req["name"].(string); ok && strings.TrimSpace(name) != "" {
 			group["name"] = name
 		}
 		// An update replaces the membership wholesale, so clearing a group has

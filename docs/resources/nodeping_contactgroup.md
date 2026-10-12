@@ -66,7 +66,7 @@ resource "nodeping_check" "site" {
 
 ### An empty group
 
-Both arguments are optional; a group may be created empty and filled later.
+`members` is optional; a group may be created empty and filled later.
 
 ```hcl
 resource "nodeping_contactgroup" "placeholder" {
@@ -76,7 +76,9 @@ resource "nodeping_contactgroup" "placeholder" {
 
 ## Argument Reference
 
-- `name` - (Optional) The display name of the contact group.
+- `name` - (Required) The display name of the contact group. It cannot be
+  empty or only whitespace: NodePing can change a group's name, but not
+  remove it.
 - `members` - (Optional) List of contact **address** IDs belonging to this
   group. Setting this to `[]` removes every member.
 
@@ -92,6 +94,10 @@ Contact groups can be imported using the group ID:
 ```shell
 terraform import nodeping_contactgroup.example 201205050153W2Q4C-G-1ZIYU
 ```
+
+A group that NodePing holds without a name, created outside Terraform,
+imports with an empty name. The plan after the import then updates it in
+place to set the configuration's `name`.
 
 To import a contact group from a SubAccount, give the resource a provider
 configured with the SubAccount's `customer_id` and import it by its
