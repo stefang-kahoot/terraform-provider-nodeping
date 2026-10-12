@@ -172,12 +172,12 @@ Terraform then leaves ` + "`mute`" + ` alone on every check, and every contact `
 				Validators:  []validator.Int64{int64validator.AtLeast(0)},
 			},
 			"retry_wait_min": schema.Int64Attribute{
-				Description: "Minimum wait time in seconds between retries. Defaults to 1.",
+				Description: "Minimum wait time in seconds between retries. 0 sends retries without waiting, unless a 429 asks for a wait in Retry-After. Defaults to 1.",
 				Optional:    true,
 				Validators:  []validator.Int64{int64validator.AtLeast(0)},
 			},
 			"retry_wait_max": schema.Int64Attribute{
-				Description: "Maximum wait time in seconds between retries, also for a 429 that asks for a longer wait in Retry-After. Defaults to 30.",
+				Description: "Maximum wait time in seconds between retries, also for a 429 that asks for a longer wait in Retry-After. 0 sends retries without waiting, even after such a 429. Defaults to 30.",
 				Optional:    true,
 				Validators:  []validator.Int64{int64validator.AtLeast(0)},
 			},

@@ -103,8 +103,8 @@ provider "nodeping" {
 
   # Optional: Retry configuration
   max_retries    = 3   # Maximum retry attempts; 0 turns retries off
-  retry_wait_min = 1   # Minimum wait between retries (seconds)
-  retry_wait_max = 30  # Maximum wait between retries (seconds)
+  retry_wait_min = 1   # Minimum wait between retries (seconds); 0 for none
+  retry_wait_max = 30  # Maximum wait between retries (seconds); 0 for none
 }
 ```
 
