@@ -25,7 +25,7 @@ does, and it is the source for a support request to NodePing.
 | 11 | A type change freezes the old type's parameters | Nothing | Document it, or let an update clear them | Low |
 | 12 | A check created without `sens` holds none | "Defaults to 2" | Store the default, or document what none means | Low |
 | 13 | An invalid check value is refused, ignored or changed | `interval` 0.25, 0.5 or an integer from 1; `sens` and `threshold` from 1 | Refuse every invalid value, naming the field | Low |
-| 14 | An address's `action` cannot be cleared, and its `priority` is not validated | `action` defaults to `get`; `priority` is -2 to 2 and defaults to 2 | Let an update clear `action`; validate `priority`, or document what is stored | Low |
+| 14 | An address's `action` cannot be cleared, and neither it nor its `priority`, header and query string values are validated | `action` is one of five methods and defaults to `get`; `priority` is -2 to 2 and defaults to 2; header and query string values are shown as strings | Let an update clear `action`, and validate it, `priority` and header and query string values, or document what is stored | Low |
 | 15 | A setting the account's plan lacks is dropped without a word, or refused | Only `homeloc` is marked as a plan feature | Refuse it with an error that names the plan | Low |
 
 ## 1. Errors come back with HTTP 200
@@ -276,7 +276,7 @@ ignored or truncated value moves `modified` like any other update, so the
 answer is not taken for a stale one. Every update in the probe behaved this
 way.
 
-## 14. An address's `action` cannot be cleared, and its `priority` is not validated
+## 14. An address's `action` cannot be cleared, and neither it nor its `priority`, header and query string values are validated
 
 On a test SubAccount in October 2026, we created a webhook address with
 `action: "post"` and Pushover addresses, and updated each under its ID:
@@ -293,10 +293,22 @@ On a test SubAccount in October 2026, we created a webhook address with
   `priority` holds neither, although the docs say they default to `get` and 2.
   What NodePing then sends was not observed.
 
+A second probe, on 2026-10-12, sent values of other JSON types on create and
+on update. Each was read back with a `GET` of the contact and of the list:
+
+- **`action`** of another type is stored and returned as sent: `1`, `true`,
+  `{}` and `[]`. `null` on a create stores none.
+- **Each value in `headers` and `querystrings`** is stored and returned as
+  sent, whatever its type: `1`, `true`, `null`, `{"a":"b"}` and `["x"]`.
+- **`headers` or `querystrings` sent as a string or a list** are ignored,
+  with 200 and no error. A create stores none, and an update keeps the map.
+
 **Effect:** a client cannot remove a webhook's `action`, only change it. A
 `priority` that is not a number, set through the API or perhaps the web UI,
 comes back as it was sent. A client that decodes it as a number fails to read
-the contact, and to list any contact in the account.
+the contact, and to list any contact in the account. So does a client that
+decodes `action`, or a header or query string value, as a string, when one
+holds another type.
 
 **Provider:**
 
@@ -308,6 +320,12 @@ the contact, and to list any contact in the account.
 - fails a plan that removes `action` from an existing address, and says to set
   it to the method the webhook should use.
 - fails a plan whose `priority` is outside -2 to 2, the range the docs give.
+- reads an `action` that is not a string as none, with a warning in the log
+  that names the contact and the address.
+- reads a header or query string value that is not a string as its JSON text,
+  digits as NodePing holds them, with a warning that names the contact, the
+  address and the key. `null` reads as `""`. Headers or query strings that are
+  not an object read as none, with a warning. No warning holds the value.
 
 ## 15. A setting the account's plan lacks is dropped without a word, or refused
 

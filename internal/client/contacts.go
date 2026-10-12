@@ -20,6 +20,7 @@ func (c *Client) ListContacts(ctx context.Context) (map[string]Contact, error) {
 	}
 	for id, contact := range result {
 		warnUnreadablePriorities(ctx, id, contact)
+		warnRetypedFields(ctx, id, contact)
 	}
 	return result, nil
 }
@@ -37,6 +38,7 @@ func (c *Client) GetContact(ctx context.Context, id string) (*Contact, error) {
 		return nil, confirmGone(ctx, &c.contactList, c.ListContacts, "contact", id, fmt.Errorf("failed to get contact: %w", err))
 	}
 	warnUnreadablePriorities(ctx, id, result)
+	warnRetypedFields(ctx, id, result)
 	return &result, nil
 }
 
@@ -54,6 +56,7 @@ func (c *Client) CreateContact(ctx context.Context, req ContactCreateRequest) (*
 		return nil, createError("contact", req.Name, err)
 	}
 	warnUnreadablePriorities(ctx, result.ID, result)
+	warnRetypedFields(ctx, result.ID, result)
 	return &result, nil
 }
 
@@ -70,6 +73,7 @@ func (c *Client) UpdateContact(ctx context.Context, id string, req ContactUpdate
 		return nil, fmt.Errorf("failed to update contact: %w", err)
 	}
 	warnUnreadablePriorities(ctx, id, result)
+	warnRetypedFields(ctx, id, result)
 	return &result, nil
 }
 
