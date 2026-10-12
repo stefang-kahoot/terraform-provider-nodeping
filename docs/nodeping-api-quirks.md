@@ -26,6 +26,7 @@ does, and it is the source for a support request to NodePing.
 | 12 | A check created without `sens` holds none | "Defaults to 2" | Store the default, or document what none means | Low |
 | 13 | An invalid check value is refused, ignored or changed | `interval` 0.25, 0.5 or an integer from 1; `sens` and `threshold` from 1 | Refuse every invalid value, naming the field | Low |
 | 14 | An address's `action` cannot be cleared, and its `priority` is not validated | `action` defaults to `get`; `priority` is -2 to 2 and defaults to 2 | Let an update clear `action`; validate `priority`, or document what is stored | Low |
+| 15 | A setting the account's plan lacks is dropped without a word, or refused | Only `homeloc` is marked as a plan feature | Refuse it with an error that names the plan | Low |
 
 ## 1. Errors come back with HTTP 200
 
@@ -182,7 +183,7 @@ except for:
   types use them.
 - `verifyvolume` and `volumemin` (docs: AUDIO): stored by no type, AUDIO
   included. `autodiag` and `homeloc` (a Premiere feature) read back as
-  `false` on every type, on the account we used.
+  `false` on every type, on the account we used. See #15.
 
 **Effect:** a client that sends such a parameter sees no error, and finds it
 missing on the next read.
@@ -308,6 +309,36 @@ the contact, and to list any contact in the account.
   it to the method the webhook should use.
 - fails a plan whose `priority` is outside -2 to 2, the range the docs give.
 
+## 15. A setting the account's plan lacks is dropped without a word, or refused
+
+NodePing's pricing page lists some features with some plans only. On a
+grandfathered Business plan, which has none of them, this is what we observed
+in October 2026:
+
+| Setting | Feature | What NodePing does |
+|---------|---------|--------------------|
+| Check `autodiag`, `homeloc` | Automated Diagnostics, Specify/roaming location | Answers 200 and holds `false`, on every type |
+| Check `verifyvolume`, `volumemin` | AUDIO volume detection | Answers 200 and holds neither, on every type |
+| Address `suppressdiag` | Automated Diagnostics | Answers 200 and holds no `suppressdiag`, on every address type, sent `true` or `false` |
+| Check `interval` `0.25` or `0.5` | Sub-minute intervals | `200 {"error":"Invalid check interval"}`; nothing in the request is applied |
+| `POST /contacts` with a `voice` address | Voice notifications | `400 {"error":"Illegal address type."}`, a real 400 unlike #1 |
+
+The API docs list `0.25` and `0.5` as intervals and `voice` as an address
+type, and mark only `homeloc` as a Premiere feature. Neither error names the
+plan.
+
+**Effect:** a client that sets a dropped value sees no error, and finds it
+missing on the next read. One that sets a refused value gets an error that
+does not say the plan is the cause.
+
+**Provider:** the provider's `plan` setting declares the account's plan, and
+a configuration that uses a feature the declared plan lacks fails the plan,
+naming the setting and the plans that have it. Left out, `plan` allows none of
+these features. An apply keeps a planned `autodiag` or `suppress_diag` that
+the answer drops. The behaviour on the Personal, Professional and Premiere
+plans is untested; see
+[#39](https://github.com/stefang-kahoot/terraform-provider-nodeping/issues/39).
+
 ## Raising it with NodePing
 
 The API has carried version 1 in its URL since the start, and its changelog
@@ -320,7 +351,8 @@ some of these behaviours, so the request should be split by risk:
 2. **Small fixes:** #3's message, #5 in the web UI, #9's stale answers, #12's
    default stored on create, a note in the answer when #10 drops a
    parameter, an error naming the field for each of #13's invalid
-   values, and #14's `priority` validated and a way to clear `action`.
+   values, #14's `priority` validated and a way to clear `action`, and an
+   error that names the plan for #15.
 3. **Breaking:** real status codes (#1) and 404s (#2). Ask whether they
    would offer these as an opt-in (a request header or query parameter) or in
    an `/api/2`, rather than changing `/api/1`. Note that #1 is also a docs

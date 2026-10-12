@@ -105,8 +105,29 @@ provider "nodeping" {
   max_retries    = 3   # Maximum retry attempts; 0 turns retries off
   retry_wait_min = 1   # Minimum wait between retries (seconds); 0 for none
   retry_wait_max = 30  # Maximum wait between retries (seconds); 0 for none
+
+  # Optional: the account's NodePing plan: "personal", "professional" or
+  # "premiere". Leave it out for an older or unknown plan. See NodePing plans.
+  plan = "premiere"
 }
 ```
+
+## NodePing plans
+
+Some NodePing features come with some plans only. Set `plan` to the account's plan when a configuration uses one of them. Leaving `plan` out stands for an older or unknown plan, such as a grandfathered Business plan, and allows none of these features. A configuration that uses a feature the declared plan lacks fails the plan. The error names the setting and the plans that have the feature.
+
+| Feature | Settings | Plans that have it |
+|---|---|---|
+| Specify/roaming location | check `homeloc`, any value | `premiere` |
+| AUDIO volume detection | check `verifyvolume` and `volumemin`, any value | `premiere` |
+| Voice notifications | contact address `type = "voice"` | `premiere` |
+| Sub-minute intervals | check `interval` of `0.25` or `0.5` | `professional`, `premiere` |
+| Automated Diagnostics | check `autodiag = true`; contact address `suppress_diag = true` | `personal`, `professional`, `premiere` |
+
+`false` for `autodiag` and `suppress_diag` is always allowed: NodePing holds it when neither is in use. The table follows NodePing's [pricing page](https://nodeping.com/pricing) and API documentation, checked in October 2026.
+
+- The provider is tested on a grandfathered Business plan. There NodePing drops all of these settings without an error, or refuses them: `voice` addresses and sub-minute intervals.
+- The behaviour on the Personal, Professional and Premiere plans, `autodiag` and `suppress_diag` included, is untested: no such account was available. Testing on them is tracked in [#39](https://github.com/stefang-kahoot/terraform-provider-nodeping/issues/39).
 
 ## Multi-Account Usage
 
@@ -252,12 +273,12 @@ resource "nodeping_contact" "example" {
 
 | Attribute | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `type` | string | Yes | Address type: `email`, `sms`, `webhook`, `slack`, `pushover`, `pagerduty`, `voice` |
+| `type` | string | Yes | Address type: `email`, `sms`, `webhook`, `slack`, `pushover`, `pagerduty`, `voice` (needs `plan = "premiere"`) |
 | `address` | string | Yes | Address value |
 | `suppress_up` | bool | No | Suppress "up" notifications |
 | `suppress_down` | bool | No | Suppress "down" notifications |
 | `suppress_first` | bool | No | Suppress "first result" notifications |
-| `suppress_diag` | bool | No | Suppress diagnostic notifications |
+| `suppress_diag` | bool | No | Suppress diagnostic notifications; `true` needs `plan` `personal`, `professional` or `premiere` |
 | `suppress_all` | bool | No | Suppress all notifications |
 | `mute` | bool | No | Mute all notifications |
 | `action` | string | No | HTTP method for webhooks |
@@ -280,7 +301,7 @@ Manages a NodePing monitoring check.
 | `target` | string | Conditional | Target URL/hostname/IP |
 | `label` | string | No | Display label |
 | `enabled` | bool | No | Enable the check |
-| `interval` | float | No | Check interval in minutes: 0.25, 0.5, or a whole number of at least 1 |
+| `interval` | float | No | Check interval in minutes: 0.25, 0.5, or a whole number of at least 1; `0.25` and `0.5` need `plan` `professional` or `premiere` |
 | `threshold` | int | No | Timeout in seconds, at least 1 |
 | `sens` | int | No | Rechecks before status change, at least 1 |
 | `dep` | string | No | Check ID for notification dependency (suppresses notifications if dependent check is failing) |

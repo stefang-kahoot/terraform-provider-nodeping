@@ -401,6 +401,11 @@ func (r *CheckResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanR
 		return
 	}
 
+	refuseOffPlan(ctx, req.Plan, r.client.AccountPlan(), &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	r.planTagsAll(ctx, req, resp)
 	if resp.Diagnostics.HasError() {
 		return

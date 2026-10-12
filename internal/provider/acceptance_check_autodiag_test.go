@@ -11,9 +11,10 @@ import (
 	"github.com/stefang-kahoot/terraform-provider-nodeping/testutil"
 )
 
-// autodiagConfig is a check with the given autodiag.
+// autodiagConfig is a check with the given autodiag, on an account that
+// declares the Personal plan, which has Automated Diagnostics.
 func autodiagConfig(url string, autodiag bool) string {
-	return providerConfig(url) + fmt.Sprintf(`
+	return providerConfigOnPlan(url, "personal") + fmt.Sprintf(`
 resource "nodeping_check" "test" {
   type     = "HTTP"
   target   = "https://example.com"
@@ -48,9 +49,10 @@ func expectAutoDiagSent(mock *testutil.MockNodePingServer, update bool, want str
 }
 
 // The mock drops autodiag, as the probed account did: it holds false
-// whatever it is sent. Switching autodiag on applies, and the plan after
-// shows it again. It used to fail the apply with "Provider produced
-// inconsistent result after apply: .autodiag: was cty.True, but now
+// whatever it is sent. On an account that declares a plan with Automated
+// Diagnostics and drops it all the same, switching autodiag on applies, and
+// the plan after shows it again. It used to fail the apply with "Provider
+// produced inconsistent result after apply: .autodiag: was cty.True, but now
 // cty.False". autodiag goes out as the string NodePing documents.
 func TestAccCheckResource_autodiagDropped(t *testing.T) {
 	mock := testutil.NewMockNodePingServer()

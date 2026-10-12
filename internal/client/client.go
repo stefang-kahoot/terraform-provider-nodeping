@@ -40,6 +40,8 @@ type Client struct {
 	userAgent    string
 	defaultTags  []string
 	ignoreMute   bool
+	// accountPlan is the provider's plan; see AccountPlan.
+	accountPlan string
 	// readBackWaits are the waits before each read of ReadCheckBack.
 	readBackWaits []time.Duration
 
@@ -69,6 +71,9 @@ type ClientConfig struct {
 	// configuration does not set one to NodePing. See the provider's
 	// ignore_mute.
 	IgnoreMute bool
+	// AccountPlan is the NodePing plan the provider's plan setting
+	// declares, "" when it is left out. See the accountplan package.
+	AccountPlan string
 	// ReadBackWaits are the waits before each read of ReadCheckBack. Left
 	// empty, they are 1, 2, 4 and 8 seconds.
 	ReadBackWaits []time.Duration
@@ -110,6 +115,7 @@ func NewClient(cfg ClientConfig) *Client {
 		userAgent:    cfg.UserAgent,
 		defaultTags:  cfg.DefaultTags,
 		ignoreMute:   cfg.IgnoreMute,
+		accountPlan:  cfg.AccountPlan,
 		// A copy, so that changing the slice passed in changes nothing here.
 		readBackWaits: append([]time.Duration(nil), cfg.ReadBackWaits...),
 	}
@@ -122,6 +128,12 @@ func (c *Client) GetDefaultTags() []string {
 // IgnoreMute reports whether the provider's ignore_mute is set.
 func (c *Client) IgnoreMute() bool {
 	return c.ignoreMute
+}
+
+// AccountPlan returns the NodePing plan the provider's plan setting declares,
+// or "" when it is left out: an older or unknown plan.
+func (c *Client) AccountPlan() string {
+	return c.accountPlan
 }
 
 type requestOptions struct {
