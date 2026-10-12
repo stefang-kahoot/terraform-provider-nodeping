@@ -60,10 +60,104 @@ func TestJSONSemanticEqual(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "numeric forms both decode to float64",
+			name: "the same number written differently is equal",
 			a:    `{"a":1}`,
 			b:    `{"a":1.0}`,
 			want: true,
+		},
+		{
+			name: "a number with an exponent is the same number without",
+			a:    `[100, 0.5, -1.50, 0]`,
+			b:    `[1e2, 5E-1, -15e-1, -0.0]`,
+			want: true,
+		},
+		// Decoded as float64, integers beyond 2^53 round, and two different
+		// ones could compare equal: a change to one planned no change.
+		{
+			name: "large integers that differ are not equal",
+			a:    `{"id":12345678901234567890}`,
+			b:    `{"id":12345678901234567891}`,
+			want: false,
+		},
+		{
+			name: "integers just beyond 2^53 that differ are not equal",
+			a:    `9007199254740993`,
+			b:    `9007199254740992`,
+			want: false,
+		},
+		{
+			name: "the same large integer is equal",
+			a:    `{"id": 12345678901234567890}`,
+			b:    `{"id":12345678901234567890}`,
+			want: true,
+		},
+		{
+			name: "fractions that differ beyond float64's precision are not equal",
+			a:    `0.10000000000000000001`,
+			b:    `0.1`,
+			want: false,
+		},
+		{
+			name: "the same number with a huge exponent is equal",
+			a:    `[1e99999999999999999999]`,
+			b:    `[ 1e99999999999999999999 ]`,
+			want: true,
+		},
+		{
+			name: "different huge exponents are not equal",
+			a:    `1e99999999999999999999`,
+			b:    `1e99999999999999999998`,
+			want: false,
+		},
+		// Decoding keeps the last of duplicate keys, so text with them is
+		// only the same as the same text.
+		{
+			name: "duplicate keys are not the last value alone",
+			a:    `{"a":1,"a":2}`,
+			b:    `{"a":2}`,
+			want: false,
+		},
+		{
+			name: "duplicate keys spelled differently are still duplicates",
+			a:    `{"a":1,"\u0061":2}`,
+			b:    `{"a":2}`,
+			want: false,
+		},
+		{
+			name: "nested duplicate keys are not the last value alone",
+			a:    `{"x":{"a":1,"a":2}}`,
+			b:    `{"x":{"a":2}}`,
+			want: false,
+		},
+		{
+			name: "duplicate keys are the same text",
+			a:    `{"a":1,"a":2}`,
+			b:    `{"a":1,"a":2}`,
+			want: true,
+		},
+		{
+			name: "the same key in two objects is not a duplicate",
+			a:    `[{"a":1},{"a":1}]`,
+			b:    `[ {"a": 1}, {"a": 1} ]`,
+			want: true,
+		},
+		{
+			name: "strings escaped differently are equal",
+			a:    `{"\u0061":"\u00e9\n"}`,
+			b:    "{\"a\":\"\u00e9\\n\"}",
+			want: true,
+		},
+		{
+			name: "text after the JSON is not JSON",
+			a:    `{"a":1} x`,
+			b:    `{"a":1}`,
+			want: false,
+		},
+		{
+			name: "whitespace alone is not JSON",
+			a:    " ",
+			b:    "",
+			want: false,
 		},
 		{
 			name: "number is not the string of that number",
@@ -125,6 +219,9 @@ func TestJSONSemanticEqualIsSymmetric(t *testing.T) {
 		{`{"a":1}`, `{"a":2}`},
 		{`{"a":1}`, "not json"},
 		{"not json", "not json"},
+		{`{"a":1,"a":2}`, `{"a":2}`},
+		{`12345678901234567890`, `12345678901234567891`},
+		{`1e2`, `100`},
 	}
 
 	for _, p := range pairs {
@@ -194,6 +291,13 @@ func TestPlanModifyString(t *testing.T) {
 			plan:       types.StringUnknown(),
 			wantPlan:   types.StringUnknown(),
 			wantReason: "unknown plan cannot be compared",
+		},
+		{
+			name:       "a large integer changed is a change",
+			state:      types.StringValue(`{"id":12345678901234567890}`),
+			plan:       types.StringValue(`{"id": 12345678901234567891}`),
+			wantPlan:   types.StringValue(`{"id": 12345678901234567891}`),
+			wantReason: "two integers float64 rounds to one are still two",
 		},
 		{
 			name:       "invalid JSON on both sides with different text stays different",

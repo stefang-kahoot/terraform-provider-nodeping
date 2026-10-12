@@ -72,10 +72,11 @@ func TestContactAddressPriority(t *testing.T) {
 				t.Errorf("priority %s: unreadable = %v, want %v", tt.priority, addr.unreadablePriority, tt.unreadable)
 			}
 
-			// The other fields decode as they did.
+			// The other fields decode as they did, data's numbers as
+			// written; see decodeAddressData.
 			data, _ := addr.Data.(map[string]interface{})
 			if addr.Address != "FAKE-user-key" || addr.Type != "pushover" || addr.Action != "get" ||
-				string(addr.Mute) != "true" || addr.Headers["X-One"] != "1" || data["a"] != float64(1) {
+				string(addr.Mute) != "true" || addr.Headers["X-One"] != "1" || data["a"] != json.Number("1") {
 				t.Errorf("the other fields decoded as %+v", addr)
 			}
 		})

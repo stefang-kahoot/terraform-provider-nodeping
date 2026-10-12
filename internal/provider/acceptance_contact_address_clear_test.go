@@ -355,9 +355,10 @@ func TestAccContactResource_addressDataRemovalFailsAtPlan(t *testing.T) {
 				ExpectError: addrClearDataError,
 			},
 			{
-				// An empty string is no way round it: NodePing keeps the data.
+				// An empty string is no way round it: NodePing keeps the data,
+				// and the plan refuses "" before that.
 				Config:      addrClearDataConfig(mock.URL(), strings.Replace(addrClearHookWithData, `"{\"text\":\"{label} is {event}\"}"`, `""`, 1)),
-				ExpectError: addrClearDataError,
+				ExpectError: emptyDataError,
 			},
 			{
 				Config: withData,

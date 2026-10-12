@@ -259,8 +259,14 @@ usual.
 							ElementType: types.StringType,
 						},
 						"data": schema.StringAttribute{
-							Description: "Request body for webhook addresses (POST/PUT).",
-							Optional:    true,
+							Description: "Request body for webhook addresses (POST/PUT). " +
+								"A JSON body can be written with any formatting: NodePing holds it as written, " +
+								"and the same JSON written differently from what NodePing holds plans no change. " +
+								"It cannot be \"\": NodePing stores no data for it, so a plan with it fails; leave data out instead.",
+							Optional: true,
+							Validators: []validator.String{
+								NotEmptyData(),
+							},
 							PlanModifiers: []planmodifier.String{
 								JSONSemanticEqual(),
 							},

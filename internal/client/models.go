@@ -30,7 +30,10 @@ type ContactAddress struct {
 	Action        string            `json:"action,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
 	QueryStrings  map[string]string `json:"querystrings,omitempty"`
-	Data          interface{}       `json:"data,omitempty"`
+	// Data is a webhook's body as NodePing answers with it: a string, or
+	// another JSON value, whose numbers are json.Number, as written; see
+	// decodeAddressData.
+	Data interface{} `json:"data,omitempty"`
 	// Priority is nil when the address holds none. NodePing stores any
 	// priority sent, unvalidated, so it is read leniently; see readPriority.
 	Priority *int `json:"priority,omitempty"`
@@ -40,21 +43,40 @@ type ContactAddress struct {
 	unreadablePriority bool
 }
 
-// UnmarshalJSON decodes an address, reading its priority with readPriority.
-// Decoded as a number, one address holding "" or "abc" failed the read of its
-// contact, and the list of every contact in the account.
+// UnmarshalJSON decodes an address, reading its priority with readPriority
+// and its data with decodeAddressData. Decoded as a number, one address
+// holding "" or "abc" failed the read of its contact, and the list of every
+// contact in the account.
 func (a *ContactAddress) UnmarshalJSON(data []byte) error {
 	// Plain has the fields of ContactAddress but not this method.
 	type Plain ContactAddress
 	decoded := struct {
 		*Plain
 		Priority json.RawMessage `json:"priority"`
+		Data     json.RawMessage `json:"data"`
 	}{Plain: (*Plain)(a)}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
 	a.Priority, a.unreadablePriority = readPriority(decoded.Priority)
-	return nil
+	var err error
+	a.Data, err = decodeAddressData(decoded.Data)
+	return err
+}
+
+// decodeAddressData decodes a webhook's data as NodePing holds it, with every
+// number in it as a json.Number, as written. Decoded as a float64, an integer
+// beyond 2^53 read back rounded, and so as another number than the one
+// NodePing holds. No data and null read as nil.
+func decodeAddressData(raw json.RawMessage) (interface{}, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value interface{}
+	err := decoder.Decode(&value)
+	return value, err
 }
 
 // readPriority reads a Pushover priority as NodePing holds it. NodePing

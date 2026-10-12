@@ -11,91 +11,6 @@ import (
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
 )
 
-func TestNormalizeJSONString(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{
-			name:  "whitespace is stripped",
-			input: `{"a": 1,  "b" : 2}`,
-			want:  `{"a":1,"b":2}`,
-		},
-		{
-			name:  "already compact is unchanged",
-			input: `{"a":1}`,
-			want:  `{"a":1}`,
-		},
-		{
-			name:  "keys are sorted by re-marshalling",
-			input: `{"b":2,"a":1}`,
-			want:  `{"a":1,"b":2}`,
-		},
-		{
-			name:  "nested structures are compacted",
-			input: `{"x": {"y": [1, 2, 3]}}`,
-			want:  `{"x":{"y":[1,2,3]}}`,
-		},
-		{
-			name:  "arrays are compacted",
-			input: `[1, 2, 3]`,
-			want:  `[1,2,3]`,
-		},
-		// Anything that is not JSON must survive untouched, so a plain webhook
-		// body is not silently mangled.
-		{
-			name:  "invalid JSON passes through",
-			input: "not json",
-			want:  "not json",
-		},
-		{
-			name:  "empty string passes through",
-			input: "",
-			want:  "",
-		},
-		{
-			name:  "bare string is valid JSON and is re-quoted",
-			input: `"hello"`,
-			want:  `"hello"`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := normalizeJSONString(tt.input); got != tt.want {
-				t.Errorf("normalizeJSONString(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-// normalizeJSONString must be idempotent: running it twice has to give the
-// same result as running it once, otherwise a value could oscillate between
-// plans and produce a permanent diff.
-func TestNormalizeJSONStringIsIdempotent(t *testing.T) {
-	t.Parallel()
-
-	inputs := []string{
-		`{"a": 1,  "b" : 2}`,
-		`{"b":2,"a":1}`,
-		`[1, 2, 3]`,
-		"not json",
-		"",
-	}
-
-	for _, in := range inputs {
-		once := normalizeJSONString(in)
-		twice := normalizeJSONString(once)
-		if once != twice {
-			t.Errorf("not idempotent for %q: once=%q twice=%q", in, once, twice)
-		}
-	}
-}
-
 func TestMapAddressesToModelEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -201,8 +116,11 @@ func TestMapAddressesToModelMute(t *testing.T) {
 	}
 }
 
-// `data` comes back as a JSON string for some contact types and as a decoded
-// object for others. Both have to end up as the same compact JSON string.
+// NodePing returns `data` exactly as sent, and the provider sends a string,
+// so a string reads as it is, JSON or not, byte for byte (#40). It used to be
+// read as compact JSON, its keys sorted, and a body written any other way
+// failed the apply. An object, which only a write outside Terraform can
+// leave, reads as compact JSON.
 func TestMapAddressesToModelData(t *testing.T) {
 	t.Parallel()
 
@@ -213,9 +131,39 @@ func TestMapAddressesToModelData(t *testing.T) {
 		want     string
 	}{
 		{
-			name: "json string is compacted",
-			data: `{"a": 1}`,
+			name: "compact JSON is read as returned",
+			data: `{"a":1}`,
 			want: `{"a":1}`,
+		},
+		{
+			name: "JSON with spaces and a newline is read as returned",
+			data: "{ \"a\": 1,\n  \"b\": [1, 2] }",
+			want: "{ \"a\": 1,\n  \"b\": [1, 2] }",
+		},
+		{
+			name: "keys out of order stay in their order",
+			data: `{"b":1,"a":2}`,
+			want: `{"b":1,"a":2}`,
+		},
+		{
+			name: "numbers stay as written",
+			data: `{"a":1.0,"b":1e2,"id":12345678901234567890}`,
+			want: `{"a":1.0,"b":1e2,"id":12345678901234567890}`,
+		},
+		{
+			name: "HTML characters are not escaped",
+			data: `{"text":"<b>{label}</b> & {event}"}`,
+			want: `{"text":"<b>{label}</b> & {event}"}`,
+		},
+		{
+			name: "duplicate keys stay",
+			data: `{"a":1,"a":2}`,
+			want: `{"a":1,"a":2}`,
+		},
+		{
+			name: "a trailing newline stays",
+			data: "{\"a\":1}\n",
+			want: "{\"a\":1}\n",
 		},
 		{
 			name:     "empty string becomes null",
@@ -229,13 +177,29 @@ func TestMapAddressesToModelData(t *testing.T) {
 		},
 		{
 			name: "object is marshalled to compact json",
-			data: map[string]interface{}{"a": float64(1)},
-			want: `{"a":1}`,
+			data: map[string]interface{}{"b": float64(1), "a": "x"},
+			want: `{"a":"x","b":1}`,
+		},
+		// The client decodes an object's numbers as written (json.Number).
+		{
+			name: "an object's numbers stay as written",
+			data: map[string]interface{}{"id": json.Number("12345678901234567890"), "n": json.Number("1.0")},
+			want: `{"id":12345678901234567890,"n":1.0}`,
+		},
+		{
+			name: "array is marshalled to compact json",
+			data: []interface{}{float64(1), "x"},
+			want: `[1,"x"]`,
 		},
 		{
 			name: "non-json string passes through",
 			data: "plain text",
 			want: "plain text",
+		},
+		{
+			name: "whitespace passes through",
+			data: " ",
+			want: " ",
 		},
 	}
 
@@ -263,6 +227,22 @@ func TestMapAddressesToModelData(t *testing.T) {
 				t.Errorf("Data = %q, want %q", got[0].Data.ValueString(), tt.want)
 			}
 		})
+	}
+}
+
+// An object body is read with <, > and & as they are, not escaped as
+// \u003c, \u003e and \u0026: the next update writes the body back as read.
+// The JSON ends without the newline an encoder adds.
+func TestReadDataObjectKeepsHTMLCharacters(t *testing.T) {
+	t.Parallel()
+
+	got := readData(map[string]interface{}{"text": "<b>{label}</b> & {event}", "n": float64(1)})
+	if want := `{"n":1,"text":"<b>{label}</b> & {event}"}`; got.ValueString() != want {
+		t.Errorf("data read as %q, want %q", got.ValueString(), want)
+	}
+	got = readData([]interface{}{"a>b"})
+	if want := `["a>b"]`; got.ValueString() != want {
+		t.Errorf("data read as %q, want %q", got.ValueString(), want)
 	}
 }
 
