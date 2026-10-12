@@ -132,7 +132,7 @@ The `address` block supports the following arguments:
 
 #### Pushover-Specific Arguments
 
-- `priority` - (Optional) Pushover notification priority, from `-2` to `2`. Removing `priority` clears it. NodePing's docs say it uses `2` when none is set, but NodePing stores none.
+- `priority` - (Optional) Pushover notification priority, from `-2` to `2`. A plan with any other value fails, although NodePing would store it. Removing `priority` clears it. NodePing's docs say it uses `2` when none is set, but NodePing stores none. An address set outside Terraform may hold a priority outside the range. To manage it, set a priority within the range, or leave `priority` out.
 
 ## Attribute Reference
 

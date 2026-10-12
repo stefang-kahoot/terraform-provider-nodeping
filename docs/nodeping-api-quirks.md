@@ -306,6 +306,7 @@ the contact, and to list any contact in the account.
 - sends `null` when the configuration removes `priority`.
 - fails a plan that removes `action` from an existing address, and says to set
   it to the method the webhook should use.
+- fails a plan whose `priority` is outside -2 to 2, the range the docs give.
 
 ## Raising it with NodePing
 

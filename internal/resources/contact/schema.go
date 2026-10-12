@@ -1,6 +1,7 @@
 package contact
 
 import (
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -265,9 +266,19 @@ usual.
 							},
 						},
 						"priority": schema.Int64Attribute{
-							Description: "Priority for Pushover addresses, from -2 to 2. Removing it clears it. " +
-								"NodePing's docs say it uses 2 when none is set, but NodePing stores none.",
+							Description: "Priority for Pushover addresses, from -2 to 2. " +
+								"A plan with any other value fails, although NodePing would store it. " +
+								"Removing it clears it. " +
+								"NodePing's docs say it uses 2 when none is set, but NodePing stores none. " +
+								"An address set outside Terraform may hold a priority outside the range. " +
+								"To manage it, set a priority within the range, or leave priority out.",
 							Optional: true,
+							// Pushover's range, as NodePing's docs give it.
+							// NodePing itself stores any value, 3 and -3
+							// included.
+							Validators: []validator.Int64{
+								int64validator.Between(-2, 2),
+							},
 						},
 					},
 				},
