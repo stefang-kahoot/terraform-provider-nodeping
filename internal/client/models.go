@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
+	"strconv"
 )
 
 type Contact struct {
@@ -29,7 +31,68 @@ type ContactAddress struct {
 	Headers       map[string]string `json:"headers,omitempty"`
 	QueryStrings  map[string]string `json:"querystrings,omitempty"`
 	Data          interface{}       `json:"data,omitempty"`
-	Priority      *int              `json:"priority,omitempty"`
+	// Priority is nil when the address holds none. NodePing stores any
+	// priority sent, unvalidated, so it is read leniently; see readPriority.
+	Priority *int `json:"priority,omitempty"`
+
+	// unreadablePriority is whether the address holds a priority that
+	// readPriority could not read, and read as none.
+	unreadablePriority bool
+}
+
+// UnmarshalJSON decodes an address, reading its priority with readPriority.
+// Decoded as a number, one address holding "" or "abc" failed the read of its
+// contact, and the list of every contact in the account.
+func (a *ContactAddress) UnmarshalJSON(data []byte) error {
+	// Plain has the fields of ContactAddress but not this method.
+	type Plain ContactAddress
+	decoded := struct {
+		*Plain
+		Priority json.RawMessage `json:"priority"`
+	}{Plain: (*Plain)(a)}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	a.Priority, a.unreadablePriority = readPriority(decoded.Priority)
+	return nil
+}
+
+// readPriority reads a Pushover priority as NodePing holds it. NodePing
+// stores whatever a create or update sends: numbers, strings, "" and null. A
+// whole number reads as itself, and a string holding one as that number. No
+// priority, null and "" read as none. Anything else is unreadable, and reads
+// as none too.
+func readPriority(raw json.RawMessage) (priority *int, unreadable bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value interface{}
+	if err := decoder.Decode(&value); err != nil {
+		return nil, true
+	}
+
+	var text string
+	switch v := value.(type) {
+	case nil:
+		return nil, false
+	case json.Number:
+		text = v.String()
+	case string:
+		if v == "" {
+			return nil, false
+		}
+		text = v
+	default:
+		return nil, true
+	}
+
+	n, err := strconv.Atoi(text)
+	if err != nil {
+		return nil, true
+	}
+	return &n, false
 }
 
 // AddressRequest is an address as a create or an update writes it: in

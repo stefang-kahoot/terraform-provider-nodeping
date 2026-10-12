@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 func (c *Client) ListContacts(ctx context.Context) (map[string]Contact, error) {
@@ -15,6 +17,9 @@ func (c *Client) ListContacts(ctx context.Context) (map[string]Contact, error) {
 	}, &result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list contacts: %w", err)
+	}
+	for id, contact := range result {
+		warnUnreadablePriorities(ctx, id, contact)
 	}
 	return result, nil
 }
@@ -31,6 +36,7 @@ func (c *Client) GetContact(ctx context.Context, id string) (*Contact, error) {
 	if err != nil {
 		return nil, confirmGone(ctx, &c.contactList, c.ListContacts, "contact", id, fmt.Errorf("failed to get contact: %w", err))
 	}
+	warnUnreadablePriorities(ctx, id, result)
 	return &result, nil
 }
 
@@ -47,6 +53,7 @@ func (c *Client) CreateContact(ctx context.Context, req ContactCreateRequest) (*
 	if err != nil {
 		return nil, createError("contact", req.Name, err)
 	}
+	warnUnreadablePriorities(ctx, result.ID, result)
 	return &result, nil
 }
 
@@ -62,6 +69,7 @@ func (c *Client) UpdateContact(ctx context.Context, id string, req ContactUpdate
 	if err != nil {
 		return nil, fmt.Errorf("failed to update contact: %w", err)
 	}
+	warnUnreadablePriorities(ctx, id, result)
 	return &result, nil
 }
 
@@ -78,4 +86,19 @@ func (c *Client) DeleteContact(ctx context.Context, id string) error {
 		return fmt.Errorf("delete contact returned ok=false")
 	}
 	return nil
+}
+
+// warnUnreadablePriorities logs every address of the contact whose priority
+// NodePing holds as something readPriority cannot read, and read as none. The
+// log names the contact and the address, but leaves the value out.
+func warnUnreadablePriorities(ctx context.Context, id string, contact Contact) {
+	for addrID, addr := range contact.Addresses {
+		if addr.unreadablePriority {
+			tflog.Warn(ctx, "NodePing holds a contact address priority that is not a whole number; reading it as none", map[string]interface{}{
+				"contact_id":   id,
+				"contact_name": contact.Name,
+				"address_id":   addrID,
+			})
+		}
+	}
 }

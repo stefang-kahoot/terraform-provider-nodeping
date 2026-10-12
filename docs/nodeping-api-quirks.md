@@ -25,6 +25,7 @@ does, and it is the source for a support request to NodePing.
 | 11 | A type change freezes the old type's parameters | Nothing | Document it, or let an update clear them | Low |
 | 12 | A check created without `sens` holds none | "Defaults to 2" | Store the default, or document what none means | Low |
 | 13 | An invalid check value is refused, ignored or changed | `interval` 0.25, 0.5 or an integer from 1; `sens` and `threshold` from 1 | Refuse every invalid value, naming the field | Low |
+| 14 | An address's `priority` is not validated | -2 to 2 | Validate it, or document what is stored | Low |
 
 ## 1. Errors come back with HTTP 200
 
@@ -274,6 +275,22 @@ ignored or truncated value moves `modified` like any other update, so the
 answer is not taken for a stale one. Every update in the probe behaved this
 way.
 
+## 14. An address's `priority` is not validated
+
+On a test SubAccount in October 2026, Pushover addresses stored whatever
+`priority` a create or update sent: `-3`, `3`, `""`, `"abc"` and `"1"` alike.
+Nothing was refused. `null` was stored too: the key stays, with the value
+`null`.
+
+**Effect:** a `priority` that is not a number, set through the API or perhaps
+the web UI, comes back as it was sent. A client that decodes it as a number
+fails to read the contact, and to list any contact in the account.
+
+**Provider:** reads a `priority` that is a whole number, or a string holding
+one, as that number. `""` and `null` read as none. Anything else reads as none
+too, with a warning in the log that names the contact and the address, but not
+the value.
+
 ## Raising it with NodePing
 
 The API has carried version 1 in its URL since the start, and its changelog
@@ -284,8 +301,8 @@ some of these behaviours, so the request should be split by risk:
    #11, what #12's missing `sens` means, and #10's per-type lists.
 2. **Small fixes:** #3's message, #5 in the web UI, #9's stale answers, #12's
    default stored on create, a note in the answer when #10 drops a
-   parameter, and an error naming the field for each of #13's invalid
-   values.
+   parameter, an error naming the field for each of #13's invalid
+   values, and #14's `priority` validated.
 3. **Breaking:** real status codes (#1) and 404s (#2). Ask whether they
    would offer these as an opt-in (a request header or query parameter) or in
    an `/api/2`, rather than changing `/api/1`. Note that #1 is also a docs
