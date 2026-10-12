@@ -2,6 +2,7 @@ package provider_test
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -431,6 +432,58 @@ func TestAccContactResource_webhookDataNotJSON(t *testing.T) {
 					stateData(0, padded),
 					heldData(mock, 0, padded),
 					contactPUTs(mock, 1),
+				),
+			},
+		},
+	})
+}
+
+// emptyDataError is the plan's error for data = "".
+var emptyDataError = regexp.MustCompile(`Empty\s+webhook\s+data[\s\S]*Leave\s+data\s+out\s+for\s+an\s+address\s+without\s+a\s+body`)
+
+// webhookWithoutData is a webhook address block that leaves data out.
+const webhookWithoutData = `
+  address {
+    type    = "webhook"
+    address = "https://hooks.example.com/one"
+    action  = "post"
+  }
+`
+
+// data = "" fails the plan, on create and on update, and says to leave data
+// out. NodePing stores no data for "", so the create used to fail at apply
+// with "was cty.StringVal(""), but now null", and the update the same way.
+// Leaving data out works. Nothing refused is sent.
+func TestAccContactResource_emptyWebhookDataFailsAtPlan(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config:      dataConfig(mock.URL(), "acc-data", webhookBlock(dataHookOne, "")),
+				ExpectError: emptyDataError,
+			},
+			{
+				Config:           dataConfig(mock.URL(), "acc-data", webhookWithoutData),
+				ConfigPlanChecks: emptyPlanAfterApply,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					contactWrites(mock, 1),
+					resource.TestCheckNoResourceAttr(addressIDsContact, "address.0.data"),
+				),
+			},
+			{
+				Config:      dataConfig(mock.URL(), "acc-data", webhookBlock(dataHookOne, "")),
+				ExpectError: emptyDataError,
+			},
+			{
+				Config: dataConfig(mock.URL(), "acc-data", webhookBlock(dataHookOne, dataSpaced)),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					// The create and this update: the refused plans sent
+					// nothing.
+					contactWrites(mock, 2),
+					stateData(0, dataSpaced),
 				),
 			},
 		},

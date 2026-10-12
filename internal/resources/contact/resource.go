@@ -350,7 +350,8 @@ func describeContact(ctx context.Context, state tfsdk.State, diags *diag.Diagnos
 // but no longer sets the data that address has. NodePing cannot clear an
 // address's data: "", null, false and 0 all keep it, and only a value such as
 // {} or " " replaces it (finding 32). Data set to "" counts as removed, as
-// it changes nothing in NodePing. A new address has nothing to clear, and
+// it changes nothing in NodePing; the schema refuses it before this, on any
+// address (NotEmptyData). A new address has nothing to clear, and
 // data not known until apply cannot be told yet; Terraform plans again then.
 func addressesDroppingData(prior, planned []AddressModel, ids []types.String) []int {
 	priorData := make(map[string]types.String, len(prior))

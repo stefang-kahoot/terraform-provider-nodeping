@@ -128,7 +128,7 @@ The `address` block supports the following arguments:
 - `action` - (Optional) HTTP method for webhook requests. Valid values: `get`, `put`, `post`, `head`, `delete`. NodePing's docs say it uses `get` when none is set; NodePing stores none. NodePing cannot clear it, so a plan that removes `action` from an existing address fails; see Notes.
 - `headers` - (Optional) Map of HTTP headers to send with webhook requests. An update replaces the address's headers as a whole, and removing the attribute clears them.
 - `querystrings` - (Optional) Map of query string parameters to append to webhook URL. Replaced and cleared the same way as `headers`.
-- `data` - (Optional) Request body for POST/PUT webhook requests. A JSON body can be written with any formatting, such as spaces, line breaks or keys in any order: NodePing holds it as written. A configuration that writes the same JSON differently from what NodePing holds, as after an import, plans no change. NodePing cannot clear it, so a plan that removes `data` from an existing address fails; see Notes.
+- `data` - (Optional) Request body for POST/PUT webhook requests. A JSON body can be written with any formatting, such as spaces, line breaks or keys in any order: NodePing holds it as written. A configuration that writes the same JSON differently from what NodePing holds, as after an import, plans no change. It cannot be `""`: NodePing stores no data for an empty string, so a plan with it fails; leave `data` out for an address without a body. NodePing cannot clear it, so a plan that removes `data` from an existing address fails; see Notes.
 
 #### Pushover-Specific Arguments
 
