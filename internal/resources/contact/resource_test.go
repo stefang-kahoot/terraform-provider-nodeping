@@ -180,6 +180,12 @@ func TestMapAddressesToModelData(t *testing.T) {
 			data: map[string]interface{}{"b": float64(1), "a": "x"},
 			want: `{"a":"x","b":1}`,
 		},
+		// The client decodes an object's numbers as written (json.Number).
+		{
+			name: "an object's numbers stay as written",
+			data: map[string]interface{}{"id": json.Number("12345678901234567890"), "n": json.Number("1.0")},
+			want: `{"id":12345678901234567890,"n":1.0}`,
+		},
 		{
 			name: "array is marshalled to compact json",
 			data: []interface{}{float64(1), "x"},

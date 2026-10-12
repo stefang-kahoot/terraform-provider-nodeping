@@ -2,8 +2,6 @@ package contact
 
 import (
 	"context"
-	"encoding/json"
-	"reflect"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -58,21 +56,17 @@ func (m jsonSemanticEqualModifier) PlanModifyString(ctx context.Context, req pla
 }
 
 // jsonSemanticEqual compares two JSON strings for semantic equality.
-// Returns true if both strings represent the same JSON structure.
+// Returns true if both strings represent the same JSON value: see decodeJSON
+// and sameJSON. Text that decodeJSON does not decode, as it is not JSON or
+// has an object with a duplicate key, is equal only to the same text.
 func jsonSemanticEqual(a, b string) bool {
-	var aVal, bVal interface{}
-
-	// Try to unmarshal both strings as JSON
-	if err := json.Unmarshal([]byte(a), &aVal); err != nil {
-		// a is not valid JSON, fall back to string comparison
+	aVal, ok := decodeJSON(a)
+	if !ok {
 		return a == b
 	}
-
-	if err := json.Unmarshal([]byte(b), &bVal); err != nil {
-		// b is not valid JSON, fall back to string comparison
+	bVal, ok := decodeJSON(b)
+	if !ok {
 		return a == b
 	}
-
-	// Compare the unmarshaled values using deep equality
-	return reflect.DeepEqual(aVal, bVal)
+	return sameJSON(aVal, bVal)
 }
