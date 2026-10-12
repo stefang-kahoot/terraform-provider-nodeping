@@ -351,7 +351,10 @@ func updatedAddresses(contact, req map[string]interface{}) (map[string]interface
 //     stored and {} clears them. null keeps them, and a key sent as null is
 //     stored as null.
 //   - `data` cannot be cleared: "", null, false and 0 keep it. Anything else,
-//     {} or " " included, replaces it.
+//     {} or " " included, replaces it. It is held exactly as sent, a string
+//     byte for byte and an object as an object, as NodePing holds it (probed
+//     2026-10-12). Unlike NodePing, the mock answers with an object's keys
+//     sorted rather than in the order sent.
 //   - Nor can `action` (probed on 2026-10-12): "", null, false and 0 keep it.
 //     Any other string replaces it, unvalidated.
 //   - Any other field sent replaces the stored one. That includes `priority`,
@@ -717,6 +720,22 @@ func (m *MockNodePingServer) SetContactAddressMute(contactID, addrID string, mut
 		}
 		muted["mute"] = mute
 		addresses[addrID] = muted
+	}
+}
+
+// SetContactAddressData changes the data a contact address holds the way
+// someone editing it outside Terraform would: behind Terraform's back.
+func (m *MockNodePingServer) SetContactAddressData(contactID, addrID string, data interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	addresses, _ := m.contacts[contactID]["addresses"].(map[string]interface{})
+	if addr, ok := addresses[addrID].(map[string]interface{}); ok {
+		changed := make(map[string]interface{}, len(addr)+1)
+		for k, v := range addr {
+			changed[k] = v
+		}
+		changed["data"] = data
+		addresses[addrID] = changed
 	}
 }
 

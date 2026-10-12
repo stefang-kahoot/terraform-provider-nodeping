@@ -1,11 +1,13 @@
 package contact
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -706,37 +708,7 @@ func addressToModel(ctx context.Context, id string, addr client.ContactAddress, 
 		model.Action = types.StringNull()
 	}
 
-	if addr.Data != nil {
-		// Data can be a string or an object from the API
-		// Always normalize to compact JSON for consistent comparison
-		switch v := addr.Data.(type) {
-		case string:
-			if v != "" {
-				// Try to normalize JSON string to compact form
-				model.Data = types.StringValue(normalizeJSONString(v))
-			} else {
-				model.Data = types.StringNull()
-			}
-		case map[string]interface{}:
-			// Convert object to compact JSON string
-			jsonBytes, err := json.Marshal(v)
-			if err == nil {
-				model.Data = types.StringValue(string(jsonBytes))
-			} else {
-				model.Data = types.StringNull()
-			}
-		default:
-			// Try to marshal whatever it is to compact JSON
-			jsonBytes, err := json.Marshal(v)
-			if err == nil {
-				model.Data = types.StringValue(string(jsonBytes))
-			} else {
-				model.Data = types.StringNull()
-			}
-		}
-	} else {
-		model.Data = types.StringNull()
-	}
+	model.Data = readData(addr.Data)
 
 	if addr.Priority != nil {
 		model.Priority = types.Int64Value(int64(*addr.Priority))
@@ -763,19 +735,38 @@ func addressToModel(ctx context.Context, id string, addr client.ContactAddress, 
 	return model
 }
 
-// normalizeJSONString attempts to normalize a JSON string to compact form.
-// If the string is valid JSON, it returns the compact representation.
-// If not valid JSON, it returns the original string unchanged.
-func normalizeJSONString(s string) string {
-	var v interface{}
-	if err := json.Unmarshal([]byte(s), &v); err != nil {
-		// Not valid JSON, return as-is
-		return s
+// readData reads a webhook's data as NodePing returns it. NodePing holds data
+// exactly as sent, byte for byte, a string as a string and an object as an
+// object, and never compacts, reorders or parses it (probed 2026-10-12). The
+// provider sends a string, so it reads back as the plan wrote it.
+//
+// It used to be read as compact JSON, its keys sorted, its numbers as float64
+// and <, > and & escaped. A body written any other way, such as with spaces
+// or with its keys out of order, then read back different from the plan, and
+// the apply failed with "inconsistent result after apply" (#40).
+//
+// "" reads as none. Anything other than a string, such as an object, can only
+// have been written outside Terraform, and reads as compact JSON, with <, >
+// and & as they are: escaped, they would go out as such in the next update,
+// which writes the body back as a string. The data plan modifier
+// (JSONSemanticEqual) takes a configuration that writes the same JSON
+// differently from what NodePing holds for no change.
+func readData(data interface{}) types.String {
+	switch v := data.(type) {
+	case nil:
+		return types.StringNull()
+	case string:
+		if v == "" {
+			return types.StringNull()
+		}
+		return types.StringValue(v)
 	}
-	// Re-marshal to compact JSON
-	compact, err := json.Marshal(v)
-	if err != nil {
-		return s
+	var compact bytes.Buffer
+	encoder := json.NewEncoder(&compact)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(data); err != nil {
+		return types.StringNull()
 	}
-	return string(compact)
+	// Encode ends the JSON with a newline.
+	return types.StringValue(strings.TrimSuffix(compact.String(), "\n"))
 }
