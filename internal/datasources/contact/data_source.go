@@ -3,6 +3,7 @@ package contact
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -82,7 +83,7 @@ output "contact_name" {
 				Computed:    true,
 			},
 			"addresses": schema.ListNestedAttribute{
-				Description: "Contact addresses for receiving notifications.",
+				Description: "Contact addresses for receiving notifications, ordered by ID.",
 				Computed:    true,
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
@@ -167,8 +168,17 @@ func (d *ContactDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	config.Name = types.StringValue(contact.Name)
 	config.CustRole = types.StringValue(contact.CustRole)
 
-	config.Addresses = make([]AddressDataSourceModel, 0, len(contact.Addresses))
-	for id, addr := range contact.Addresses {
+	// The API returns the addresses as a map, whose iteration order is random
+	// in Go. Sorting by ID keeps the data source output stable between plans.
+	ids := make([]string, 0, len(contact.Addresses))
+	for id := range contact.Addresses {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	config.Addresses = make([]AddressDataSourceModel, 0, len(ids))
+	for _, id := range ids {
+		addr := contact.Addresses[id]
 		config.Addresses = append(config.Addresses, AddressDataSourceModel{
 			ID:            types.StringValue(id),
 			Type:          types.StringValue(addr.Type),

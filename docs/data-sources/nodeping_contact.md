@@ -34,7 +34,7 @@ output "contact_role" {
 - `customer_id` - The customer ID (account ID) that owns this contact.
 - `name` - The name of the contact.
 - `custrole` - The permission role: `edit`, `view`, or `notify`.
-- `addresses` - List of contact addresses. Each address contains:
+- `addresses` - The contact's addresses, ordered by ID. Each address contains:
   - `id` - The unique identifier of the address.
   - `type` - The type of address.
   - `address` - The address value (sensitive).
