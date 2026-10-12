@@ -26,6 +26,8 @@ type MockNodePingServer struct {
 	// stale holds the checks whose answers are made stale. See
 	// AnswerStaleUpdates.
 	stale map[string]*staleCheck
+	// checkCreates holds every create request body for a check, as sent.
+	checkCreates []map[string]interface{}
 }
 
 // ContactWrite is a create or update of a contact as the mock received it,
@@ -416,6 +418,8 @@ func (m *MockNodePingServer) handleChecks(w http.ResponseWriter, r *http.Request
 			http.Error(w, `{"error": "invalid JSON"}`, http.StatusBadRequest)
 			return
 		}
+		m.checkCreates = append(m.checkCreates, req)
+		req = m.planCheckWrite(req)
 
 		id := "MOCK-CHECK-" + generateID()
 		check := map[string]interface{}{
@@ -480,6 +484,7 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 			sent[k] = v
 		}
 		m.checkUpdates[id] = append(m.checkUpdates[id], sent)
+		req = m.planCheckWrite(req)
 
 		// The check as it was, for the answer. See updateAnswer.
 		before := copyCheck(check)

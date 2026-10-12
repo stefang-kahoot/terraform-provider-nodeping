@@ -606,9 +606,7 @@ func (r *CheckResource) buildCreateRequest(ctx context.Context, plan *CheckResou
 		req.Description = plan.Description.ValueString()
 	}
 
-	if !plan.AutoDiag.IsNull() {
-		req.AutoDiag = plan.AutoDiag.ValueBool()
-	}
+	req.AutoDiag = sentAutoDiag(plan.AutoDiag)
 
 	if !plan.RunLocations.IsNull() && !plan.RunLocations.IsUnknown() {
 		var locations []string
@@ -792,7 +790,6 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 	model.Enabled = a.Enabled
 	model.Public = a.Public
 	model.Mute = a.Mute
-	model.AutoDiag = a.AutoDiag
 	model.State = a.State
 	model.Created = a.Created
 	model.Modified = a.Modified
@@ -810,6 +807,7 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 	model.Sens = keep(holds, model.Sens, answeredSens(check, holds, a.Sens))
 	model.RunLocations = keep(holds, model.RunLocations, a.RunLocations)
 	model.HomeLoc = keep(holds, model.HomeLoc, a.HomeLoc)
+	model.AutoDiag = keep(holds, model.AutoDiag, answeredAutoDiag(holds, model.AutoDiag, a.AutoDiag))
 
 	model.ContentString = keep(holds, model.ContentString, a.ContentString)
 	model.Regex = keep(holds, model.Regex, a.Regex)

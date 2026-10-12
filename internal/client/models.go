@@ -223,8 +223,10 @@ type Check struct {
 	UUID          string                   `json:"uuid,omitempty"`
 	RunLocations  interface{}              `json:"runlocations,omitempty"`
 	HomeLoc       interface{}              `json:"homeloc,omitempty"`
-	AutoDiag      bool                     `json:"autodiag,omitempty"`
-	Tags          []string                 `json:"tags,omitempty"`
+	// AutoDiag is a boolean, or the string "true" or "false" that NodePing
+	// documents and the provider sends; untyped, so that either decodes.
+	AutoDiag interface{} `json:"autodiag,omitempty"`
+	Tags     []string    `json:"tags,omitempty"`
 }
 
 type CheckParameters struct {

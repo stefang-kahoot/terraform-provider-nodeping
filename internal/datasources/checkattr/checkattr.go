@@ -433,7 +433,7 @@ func FromAPI(ctx context.Context, check *client.Check, diags *diag.Diagnostics) 
 		Threshold:   OptionalInt64(p.Threshold),
 		Sens:        Sens(p.Sens),
 		Mute:        types.BoolValue(Bool(check.Mute)),
-		AutoDiag:    types.BoolValue(check.AutoDiag),
+		AutoDiag:    types.BoolValue(Bool(check.AutoDiag)),
 		State:       types.Int64Value(int64(check.State)),
 		Created:     types.Int64Value(check.Created),
 		Modified:    types.Int64Value(check.Modified),
