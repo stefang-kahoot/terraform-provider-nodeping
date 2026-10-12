@@ -337,7 +337,11 @@ func updatedAddresses(contact, req map[string]interface{}) (map[string]interface
 //     stored as null.
 //   - `data` cannot be cleared: "", null, false and 0 keep it. Anything else,
 //     {} or " " included, replaces it.
-//   - Any other field sent replaces the stored one.
+//   - Nor can `action` (probed on 2026-10-12): "", null, false and 0 keep it.
+//     Any other string replaces it, unvalidated.
+//   - Any other field sent replaces the stored one. That includes `priority`,
+//     which NodePing stores unvalidated, "" and "abc" included; null leaves
+//     the address holding none.
 //
 // An address the contact does not hold under that ID is stored as sent.
 func mergedAddress(stored, sent interface{}) interface{} {
@@ -357,7 +361,7 @@ func mergedAddress(stored, sent interface{}) interface{} {
 			if v == nil {
 				continue
 			}
-		case "data":
+		case "data", "action":
 			if v == nil || v == "" || v == false || v == float64(0) {
 				continue
 			}

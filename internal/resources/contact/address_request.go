@@ -20,10 +20,11 @@ import (
 //
 // NodePing merges an update into an existing address field by field, keeping
 // whatever the update leaves out, so what the configuration no longer sets
-// has to be sent as cleared: suppress flags always go out, false included,
-// and headers or query strings the prior state had and the plan has not go
-// out as {}. A new address leaves out what is unset. Data cannot be cleared
-// at all; ModifyPlan refuses to remove it.
+// has to be sent as cleared: suppress flags always go out, false included;
+// headers or query strings the prior state had and the plan has not go out
+// as {}; and a priority so removed goes out as null. A new address leaves out
+// what is unset. Data and action cannot be cleared at all; ModifyPlan refuses
+// to remove them.
 func addressRequest(ctx context.Context, addr AddressModel, prior *AddressModel, muteIgnored bool) (client.AddressRequest, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
@@ -57,9 +58,13 @@ func addressRequest(ctx context.Context, addr AddressModel, prior *AddressModel,
 	if !addr.Data.IsNull() {
 		req.Data = addr.Data.ValueString()
 	}
-	if !addr.Priority.IsNull() {
-		priority := int(addr.Priority.ValueInt64())
-		req.Priority = &priority
+	// NodePing stores whatever priority is sent, "" included, and null is the
+	// one value that leaves the address holding none.
+	switch {
+	case !addr.Priority.IsNull():
+		req.Priority = client.ValueOf(int(addr.Priority.ValueInt64()))
+	case prior != nil && !prior.Priority.IsNull():
+		req.Priority = client.NullOf[int]()
 	}
 	req.Headers = sentMap(ctx, addr.Headers, priorHeaders, &diags)
 	req.QueryStrings = sentMap(ctx, addr.QueryStrings, priorQueryStrings, &diags)

@@ -239,8 +239,10 @@ usual.
 							Default:     booldefault.StaticBool(false),
 						},
 						"action": schema.StringAttribute{
-							Description: "HTTP method for webhook addresses. Valid values: 'get', 'put', 'post', 'head', 'delete'.",
-							Optional:    true,
+							Description: "HTTP method for webhook addresses. Valid values: 'get', 'put', 'post', 'head', 'delete'. " +
+								"NodePing's docs say it uses 'get' when none is set; NodePing stores none. " +
+								"NodePing cannot clear it, so removing it from an existing address fails the plan.",
+							Optional: true,
 							Validators: []validator.String{
 								stringvalidator.OneOf("get", "put", "post", "head", "delete"),
 							},
@@ -263,8 +265,9 @@ usual.
 							},
 						},
 						"priority": schema.Int64Attribute{
-							Description: "Priority for Pushover addresses. Valid values: -2 to 2.",
-							Optional:    true,
+							Description: "Priority for Pushover addresses, from -2 to 2. Removing it clears it. " +
+								"NodePing's docs say it uses 2 when none is set, but NodePing stores none.",
+							Optional: true,
 						},
 					},
 				},

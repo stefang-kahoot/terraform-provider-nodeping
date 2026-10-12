@@ -246,8 +246,9 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 // ModifyPlan plans the ID of every address on an update; see
 // plannedAddressIDs. A create has no IDs to carry over and a destroy no plan.
 // It also refuses an update that removes a contact's last address, or the
-// data of an address it keeps. Under the provider's ignore_mute, it plans the
-// prior mute of every address whose mute is left to NodePing; see mute.go.
+// data or action of an address it keeps. Under the provider's ignore_mute, it
+// plans the prior mute of every address whose mute is left to NodePing; see
+// mute.go.
 func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
@@ -305,6 +306,17 @@ func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 				i, planned[i].Type.ValueString(), describeContact(ctx, req.State, &resp.Diagnostics)),
 		)
 	}
+
+	for _, i := range addressesDroppingAction(prior, planned, ids) {
+		resp.Diagnostics.AddAttributeError(
+			addressPath.AtListIndex(i).AtName("action"),
+			"Cannot remove a webhook's action",
+			fmt.Sprintf("The configuration removes action from address[%d], a %s address of contact %s, but NodePing cannot clear a webhook's action: "+
+				"an update can only change it. Set action to the HTTP method the webhook should use; "+
+				"NodePing's documentation says it uses get when none is set.",
+				i, planned[i].Type.ValueString(), describeContact(ctx, req.State, &resp.Diagnostics)),
+		)
+	}
 }
 
 // describeContact names the contact in a plan error: by name and ID, or by
@@ -341,6 +353,32 @@ func addressesDroppingData(prior, planned []AddressModel, ids []types.String) []
 			continue
 		}
 		if old := priorData[ids[i].ValueString()]; old.ValueString() != "" && block.Data.ValueString() == "" {
+			dropping = append(dropping, i)
+		}
+	}
+	return dropping
+}
+
+// addressesDroppingAction returns the position of every planned block that
+// keeps an existing address but no longer sets the action that address has.
+// NodePing cannot clear a webhook's action: an update that leaves it out, or
+// sends "", null, false or 0, keeps it, and only another method replaces it
+// (probed on 2026-10-12). As for data, a new address has nothing to clear,
+// and an action not known until apply cannot be told yet.
+func addressesDroppingAction(prior, planned []AddressModel, ids []types.String) []int {
+	priorAction := make(map[string]types.String, len(prior))
+	for _, old := range prior {
+		if isKnown(old.ID) {
+			priorAction[old.ID.ValueString()] = old.Action
+		}
+	}
+
+	var dropping []int
+	for i, block := range planned {
+		if !isKnown(ids[i]) || block.Action.IsUnknown() {
+			continue
+		}
+		if old := priorAction[ids[i].ValueString()]; old.ValueString() != "" && block.Action.IsNull() {
 			dropping = append(dropping, i)
 		}
 	}

@@ -8,7 +8,8 @@ import (
 
 // The mock stores whatever priority an update sends a Pushover address, the
 // way NodePing did on the test SubAccount on 2026-10-12: it validates
-// nothing, and keeps the priority when the update leaves it out.
+// nothing, and keeps the priority when the update leaves it out. null is
+// stored as null, which leaves the address holding none.
 func TestMockContactAddressPriorityMerge(t *testing.T) {
 	t.Parallel()
 
@@ -25,6 +26,7 @@ func TestMockContactAddressPriorityMerge(t *testing.T) {
 		{"a word is stored", `"abc"`, `"abc"`},
 		{"a numeric string is stored", `"1"`, `"1"`},
 		{"an empty string is stored", `""`, `""`},
+		{"null is stored, which clears it", `null`, `null`},
 	}
 
 	for _, tt := range tests {

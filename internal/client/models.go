@@ -119,7 +119,40 @@ type AddressRequest struct {
 	Headers      map[string]string `json:"headers,omitzero"`
 	QueryStrings map[string]string `json:"querystrings,omitzero"`
 	Data         string            `json:"data,omitempty"`
-	Priority     *int              `json:"priority,omitempty"`
+	// Priority, when sent, replaces the address's priority. NodePing stores
+	// whatever is sent, "" included; null is the one value that leaves the
+	// address holding none.
+	Priority Nullable[int] `json:"priority,omitzero"`
+}
+
+// Nullable is a request field that is left out, sent as null, or sent with a
+// value. NodePing keeps a field an update leaves out, and clears some only
+// when sent null, which a pointer under omitempty cannot send. Under an
+// omitzero tag the zero value is left out; NullOf sends null and ValueOf a
+// value.
+type Nullable[T any] struct {
+	value *T
+	sent  bool
+}
+
+// ValueOf returns a Nullable that sends v.
+func ValueOf[T any](v T) Nullable[T] {
+	return Nullable[T]{value: &v, sent: true}
+}
+
+// NullOf returns a Nullable that sends null.
+func NullOf[T any]() Nullable[T] {
+	return Nullable[T]{sent: true}
+}
+
+// IsZero reports whether n is left out of a request under omitzero.
+func (n Nullable[T]) IsZero() bool {
+	return !n.sent
+}
+
+// MarshalJSON sends the value, or null.
+func (n Nullable[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(n.value)
 }
 
 // ContactGroup groups contact addresses so a check can notify all of them
