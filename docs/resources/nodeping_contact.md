@@ -104,7 +104,7 @@ The `address` block supports the following arguments:
 - `type` - (Required) The type of notification address. Valid values:
   - `email` - Email address
   - `sms` - SMS phone number
-  - `voice` - Voice call phone number
+  - `voice` - Voice call phone number. Needs the provider's `plan` to be `premiere` (untested: see [NodePing plans](../index.md#nodeping-plans)).
   - `webhook` - HTTP webhook
   - `slack` - Slack webhook
   - `pushover` - Pushover notification
@@ -119,7 +119,7 @@ The `address` block supports the following arguments:
 - `suppress_up` - (Optional) Suppress "up" notifications. Defaults to `false`.
 - `suppress_down` - (Optional) Suppress "down" notifications. Defaults to `false`.
 - `suppress_first` - (Optional) Suppress "first result" notifications. Defaults to `false`.
-- `suppress_diag` - (Optional) Suppress diagnostic notifications. Defaults to `false`.
+- `suppress_diag` - (Optional) Suppress diagnostic notifications. Defaults to `false`. `true` needs the provider's `plan` to be `personal`, `professional` or `premiere` (untested: see [NodePing plans](../index.md#nodeping-plans)).
 - `suppress_all` - (Optional) Suppress all notifications. Defaults to `false`.
 - `mute` - (Optional) Mute all notifications to this address. Defaults to `false`. With the provider's `ignore_mute` set, an address block that leaves `mute` out has its mute left to NodePing: Terraform neither plans nor sends it, so a mute set in the NodePing web interface stays. A new address starts unmuted.
 

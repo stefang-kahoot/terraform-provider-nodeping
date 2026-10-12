@@ -450,12 +450,14 @@ resource "nodeping_check" "no_tags" {
 
 // AUDIO checks with volume detection. Per the NodePing API, verifyvolume is an
 // "optional boolean to enable the volume detection feature" and volumemin an
-// "optional integer (acceptable range -90 to 0)".
+// "optional integer (acceptable range -90 to 0)". Volume detection needs the
+// Premiere plan.
 func TestAccCheckResource_audioVolumeDetection(t *testing.T) {
 	mock := testutil.NewMockNodePingServer()
 	t.Cleanup(mock.Close)
+	mock.UsePremierePlan()
 
-	config := providerConfig(mock.URL()) + `
+	config := providerConfigOnPlan(mock.URL(), "premiere") + `
 resource "nodeping_check" "audio" {
   type   = "AUDIO"
   target = "https://example.com/stream.mp3"

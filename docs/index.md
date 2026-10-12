@@ -144,6 +144,32 @@ Terraform then leaves `mute` alone on every check, and every contact `address` b
 
 A check or address that sets `mute` itself is still managed, the same as without `ignore_mute`.
 
+## NodePing plans
+
+Some NodePing features come with some plans only. Set `plan` to the account's plan when a configuration uses one of them:
+
+```terraform
+provider "nodeping" {
+  api_token = var.nodeping_token
+  plan      = "premiere" # "personal", "professional" or "premiere"
+}
+```
+
+Leaving `plan` out stands for an older or unknown plan, such as a grandfathered Business plan, and allows none of these features. A configuration that uses a feature the declared plan lacks fails the plan. The error names the setting and the plans that have the feature.
+
+| Feature | Settings | Plans that have it |
+|---|---|---|
+| Specify/roaming location | check `homeloc`, any value | `premiere` |
+| AUDIO volume detection | check `verifyvolume` and `volumemin`, any value | `premiere` |
+| Voice notifications | contact address `type = "voice"` | `premiere` |
+| Sub-minute intervals | check `interval` of `0.25` or `0.5` | `professional`, `premiere` |
+| Automated Diagnostics | check `autodiag = true`; contact address `suppress_diag = true` | `personal`, `professional`, `premiere` |
+
+`false` for `autodiag` and `suppress_diag` is always allowed: NodePing holds it when neither is in use. The table follows NodePing's [pricing page](https://nodeping.com/pricing) and API documentation, checked in October 2026.
+
+- The provider is tested on a grandfathered Business plan. There NodePing drops all of these settings without an error, or refuses them: `voice` addresses and sub-minute intervals.
+- The behaviour on the Personal, Professional and Premiere plans, `autodiag` and `suppress_diag` included, is untested: no such account was available. Testing on them is tracked in [#39](https://github.com/stefang-kahoot/terraform-provider-nodeping/issues/39).
+
 ## Schema
 
 ### Optional
@@ -157,3 +183,4 @@ A check or address that sets `mute` itself is still managed, the same as without
 - `retry_wait_max` (Number) - Maximum wait time in seconds between retries, also for a 429 that asks for a longer wait in `Retry-After`. `0` sends retries without waiting, even after such a 429. Defaults to `30`.
 - `default_tags` (List of String) - Default tags to apply to all resources that support tags (e.g., checks). These tags are merged with resource-specific tags.
 - `ignore_mute` (Boolean) - Leave `mute` to NodePing on every check and contact address whose configuration does not set it: a plan never changes it and an update does not send it, so a check or address muted or unmuted in the NodePing web interface stays that way. A check or address that sets `mute` is still managed. Defaults to `false`. See [Muting in NodePing](#muting-in-nodeping).
+- `plan` (String) - The account's NodePing plan: `personal`, `professional` or `premiere`. Leave it out for an older or unknown plan, such as a grandfathered Business plan. A setting that uses a feature the plan lacks fails the plan: `homeloc`, `verifyvolume`, `volumemin` and a `voice` contact address need `premiere`; an `interval` of `0.25` or `0.5` needs `professional` or `premiere`; `autodiag = true` and `suppress_diag = true` need any of the three. See [NodePing plans](#nodeping-plans).

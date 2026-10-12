@@ -192,7 +192,7 @@ usual.
 							Computed:    true,
 						},
 						"type": schema.StringAttribute{
-							Description: "The type of address. Valid values: 'email', 'sms', 'webhook', 'slack', 'hipchat', 'pushover', 'pagerduty', 'voice'.",
+							Description: "The type of address. Valid values: 'email', 'sms', 'webhook', 'slack', 'hipchat', 'pushover', 'pagerduty', 'voice'. 'voice' needs the provider's plan to be premiere (untested: see the provider's NodePing plans section).",
 							Required:    true,
 							Validators: []validator.String{
 								stringvalidator.OneOf("email", "sms", "webhook", "slack", "hipchat", "pushover", "pagerduty", "voice"),
@@ -222,7 +222,7 @@ usual.
 							Default:     booldefault.StaticBool(false),
 						},
 						"suppress_diag": schema.BoolAttribute{
-							Description: "Suppress diagnostic notifications to this address.",
+							Description: "Suppress diagnostic notifications to this address. true needs the provider's plan to be personal, professional or premiere (untested: see the provider's NodePing plans section).",
 							Optional:    true,
 							Computed:    true,
 							Default:     booldefault.StaticBool(false),

@@ -123,15 +123,6 @@ func TestAccCheckResource_importRoundTripsTypeSpecificParameters(t *testing.T) {
   }
 `,
 		},
-		{
-			name: "HTTP keeps the preferred probe location",
-			body: `
-  type    = "HTTP"
-  target  = "https://example.com"
-  label   = "acc-import-homeloc"
-  homeloc = "nam"
-`,
-		},
 	}
 
 	for _, tt := range tests {

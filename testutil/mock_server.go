@@ -26,6 +26,11 @@ type MockNodePingServer struct {
 	// stale holds the checks whose answers are made stale. See
 	// AnswerStaleUpdates.
 	stale map[string]*staleCheck
+	// checkCreates holds every create request body for a check, as sent.
+	checkCreates []map[string]interface{}
+	// premiere makes the mock answer as an account with NodePing's Premiere
+	// plan. See UsePremierePlan.
+	premiere bool
 }
 
 // ContactWrite is a create or update of a contact as the mock received it,
@@ -154,6 +159,11 @@ func (m *MockNodePingServer) handleContacts(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		m.contactWrites = append(m.contactWrites, ContactWrite{Method: r.Method, Body: req})
+		req, status, refusal := m.planContactWrite(req)
+		if refusal != "" {
+			refuse(w, status, refusal)
+			return
+		}
 
 		// A contact may be created without addresses, by leaving
 		// `newaddresses` out; it then reads back with no `addresses` key. An
@@ -226,6 +236,11 @@ func (m *MockNodePingServer) handleContact(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		m.contactWrites = append(m.contactWrites, ContactWrite{Method: r.Method, Body: req})
+		req, status, refusal := m.planContactWrite(req)
+		if refusal != "" {
+			refuse(w, status, refusal)
+			return
+		}
 
 		addresses, ok := updatedAddresses(contact, req)
 		if !ok {
@@ -416,6 +431,12 @@ func (m *MockNodePingServer) handleChecks(w http.ResponseWriter, r *http.Request
 			http.Error(w, `{"error": "invalid JSON"}`, http.StatusBadRequest)
 			return
 		}
+		m.checkCreates = append(m.checkCreates, req)
+		req, refusal := m.planCheckWrite(req)
+		if refusal != "" {
+			refuse(w, 0, refusal)
+			return
+		}
 
 		id := "MOCK-CHECK-" + generateID()
 		check := map[string]interface{}{
@@ -480,6 +501,11 @@ func (m *MockNodePingServer) handleCheck(w http.ResponseWriter, r *http.Request)
 			sent[k] = v
 		}
 		m.checkUpdates[id] = append(m.checkUpdates[id], sent)
+		req, refusal := m.planCheckWrite(req)
+		if refusal != "" {
+			refuse(w, 0, refusal)
+			return
+		}
 
 		// The check as it was, for the answer. See updateAnswer.
 		before := copyCheck(check)

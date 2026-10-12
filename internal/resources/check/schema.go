@@ -146,7 +146,13 @@ resource "nodeping_check" "ssl" {
 
 ### Audio Stream Check
 
+Volume detection needs NodePing's Premiere plan (untested: see the provider's NodePing plans section).
+
 ` + "```hcl" + `
+provider "nodeping" {
+  plan = "premiere"
+}
+
 resource "nodeping_check" "audio" {
   type    = "AUDIO"
   target  = "https://example.com/stream.mp3"
@@ -228,7 +234,7 @@ resource "nodeping_check" "example" {
 				Default:     booldefault.StaticBool(false),
 			},
 			"interval": schema.Float64Attribute{
-				Description: "How often the check runs, in minutes: 0.25, 0.5, or a whole number of at least 1.",
+				Description: "How often the check runs, in minutes: 0.25, 0.5, or a whole number of at least 1. 0.25 and 0.5 need the provider's plan to be professional or premiere (untested: see the provider's NodePing plans section), and incur an additional fee at NodePing.",
 				Optional:    true,
 				Computed:    true,
 				Default:     float64default.StaticFloat64(15),
@@ -274,11 +280,11 @@ resource "nodeping_check" "example" {
 				ElementType: types.StringType,
 			},
 			"homeloc": schema.StringAttribute{
-				Description: "Preferred probe location for the check.",
+				Description: "Preferred probe location for the check. Needs the provider's plan to be premiere (untested: see the provider's NodePing plans section).",
 				Optional:    true,
 			},
 			"autodiag": schema.BoolAttribute{
-				Description: "Enable automated diagnostics.",
+				Description: "Enable automated diagnostics. true needs the provider's plan to be personal, professional or premiere (untested: see the provider's NodePing plans section).",
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),
@@ -488,11 +494,11 @@ resource "nodeping_check" "example" {
 				Sensitive:   true,
 			},
 			"verifyvolume": schema.BoolAttribute{
-				Description: "Enable the volume detection feature (AUDIO check only).",
+				Description: "Enable the volume detection feature (AUDIO check only). Needs the provider's plan to be premiere (untested: see the provider's NodePing plans section).",
 				Optional:    true,
 			},
 			"volumemin": schema.Int64Attribute{
-				Description: "Minimum acceptable volume threshold in dB, used by the volume detection feature (AUDIO check only). Range: -90 to 0.",
+				Description: "Minimum acceptable volume threshold in dB, used by the volume detection feature (AUDIO check only). Range: -90 to 0. Needs the provider's plan to be premiere (untested: see the provider's NodePing plans section).",
 				Optional:    true,
 				Validators: []validator.Int64{
 					int64validator.Between(-90, 0),

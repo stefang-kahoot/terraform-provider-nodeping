@@ -95,10 +95,12 @@ func (r *ContactResource) Create(ctx context.Context, req resource.CreateRequest
 	plan.ID = types.StringValue(contact.ID)
 	plan.CustomerID = types.StringValue(contact.CustomerID)
 
-	plan.Addresses = mapAddressesToModel(ctx, contact.Addresses, plan.Addresses, &resp.Diagnostics)
+	planned := plan.Addresses
+	plan.Addresses = mapAddressesToModel(ctx, contact.Addresses, planned, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	keepPlannedSuppressDiag(plan.Addresses, planned)
 
 	tflog.Debug(ctx, "Created contact", map[string]interface{}{
 		"id": contact.ID,
@@ -235,6 +237,7 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 	keepIgnoredMutes(plan.Addresses, planned, ignored)
+	keepPlannedSuppressDiag(plan.Addresses, planned)
 
 	tflog.Debug(ctx, "Updated contact", map[string]interface{}{
 		"id": contact.ID,
@@ -248,8 +251,16 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 // It also refuses an update that removes a contact's last address, or the
 // data or action of an address it keeps. Under the provider's ignore_mute, it
 // plans the prior mute of every address whose mute is left to NodePing; see
-// mute.go.
+// mute.go. Before all that, on create and update alike, it refuses an address
+// setting the provider's declared NodePing plan lacks; see plan_features.go.
 func (r *ContactResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if !req.Plan.Raw.IsNull() && r.client != nil {
+		refuseOffPlan(ctx, req.Plan, r.client.AccountPlan(), &resp.Diagnostics)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
 	}

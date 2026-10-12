@@ -31,7 +31,7 @@ func TestProviderSchema(t *testing.T) {
 		t.Fatal("provider schema is nil")
 	}
 
-	requiredAttrs := []string{"api_token", "customer_id", "api_url", "rate_limit", "max_retries", "ignore_mute"}
+	requiredAttrs := []string{"api_token", "customer_id", "api_url", "rate_limit", "max_retries", "ignore_mute", "plan"}
 	for _, attr := range requiredAttrs {
 		found := false
 		for _, block := range schemaResp.Provider.Block.Attributes {
@@ -59,6 +59,7 @@ func TestUnknownSettings(t *testing.T) {
 		RetryWaitMax: types.Int64Null(),
 		DefaultTags:  types.ListValueMust(types.StringType, []attr.Value{types.StringValue("a")}),
 		IgnoreMute:   types.BoolNull(),
+		Plan:         types.StringValue("premiere"),
 	}
 	if diags := unknownSettings(known); diags.HasError() {
 		t.Fatalf("known settings failed: %v", diags)
@@ -82,6 +83,7 @@ func TestUnknownSettings(t *testing.T) {
 			m.DefaultTags = types.ListValueMust(types.StringType, []attr.Value{types.StringValue("a"), types.StringUnknown()})
 		}},
 		{"ignore_mute", "ignore_mute", "", func(m *NodePingProviderModel) { m.IgnoreMute = types.BoolUnknown() }},
+		{"plan", "plan", "", func(m *NodePingProviderModel) { m.Plan = types.StringUnknown() }},
 	}
 
 	for _, tt := range tests {

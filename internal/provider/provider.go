@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -19,6 +20,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/accountplan"
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/client"
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/check"
 	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/checks"
@@ -50,6 +52,7 @@ type NodePingProviderModel struct {
 	RetryWaitMax types.Int64   `tfsdk:"retry_wait_max"`
 	DefaultTags  types.List    `tfsdk:"default_tags"`
 	IgnoreMute   types.Bool    `tfsdk:"ignore_mute"`
+	Plan         types.String  `tfsdk:"plan"`
 }
 
 func New(version string) func() provider.Provider {
@@ -143,6 +146,32 @@ provider "nodeping" {
 ` + "```" + `
 
 Terraform then leaves ` + "`mute`" + ` alone on every check, and every contact ` + "`address`" + ` block, whose configuration does not set it: a plan never changes it, and an update does not send it, so a check or address muted in NodePing stays muted, even if it was muted after the plan was made. A check or address that sets ` + "`mute`" + ` itself is still managed. A new check or address starts unmuted.
+
+## NodePing plans
+
+Some NodePing features come with some plans only. Set ` + "`plan`" + ` to the account's plan when a configuration uses one of them:
+
+` + "```hcl" + `
+provider "nodeping" {
+  api_token = var.nodeping_token
+  plan      = "premiere" # "personal", "professional" or "premiere"
+}
+` + "```" + `
+
+Leaving ` + "`plan`" + ` out stands for an older or unknown plan, such as a grandfathered Business plan, and allows none of these features. A configuration that uses a feature the declared plan lacks fails the plan. The error names the setting and the plans that have the feature.
+
+| Feature | Settings | Plans that have it |
+|---|---|---|
+| Specify/roaming location | check ` + "`homeloc`" + `, any value | ` + "`premiere`" + ` |
+| AUDIO volume detection | check ` + "`verifyvolume`" + ` and ` + "`volumemin`" + `, any value | ` + "`premiere`" + ` |
+| Voice notifications | contact address ` + "`type = \"voice\"`" + ` | ` + "`premiere`" + ` |
+| Sub-minute intervals | check ` + "`interval`" + ` of ` + "`0.25`" + ` or ` + "`0.5`" + ` | ` + "`professional`" + `, ` + "`premiere`" + ` |
+| Automated Diagnostics | check ` + "`autodiag = true`" + `; contact address ` + "`suppress_diag = true`" + ` | ` + "`personal`" + `, ` + "`professional`" + `, ` + "`premiere`" + ` |
+
+` + "`false`" + ` for ` + "`autodiag`" + ` and ` + "`suppress_diag`" + ` is always allowed: NodePing holds it when neither is in use. The table follows NodePing's [pricing page](https://nodeping.com/pricing) and API documentation, checked in October 2026.
+
+- The provider is tested on a grandfathered Business plan. There NodePing drops all of these settings without an error, or refuses them: ` + "`voice`" + ` addresses and sub-minute intervals.
+- The behaviour on the Personal, Professional and Premiere plans, ` + "`autodiag`" + ` and ` + "`suppress_diag`" + ` included, is untested: no such account was available. Testing on them is tracked in [#39](https://github.com/stefang-kahoot/terraform-provider-nodeping/issues/39).
 `,
 		Attributes: map[string]schema.Attribute{
 			"api_token": schema.StringAttribute{
@@ -191,6 +220,12 @@ Terraform then leaves ` + "`mute`" + ` alone on every check, and every contact `
 				Description:         "Leave mute to NodePing on every check and contact address whose configuration does not set it: a plan never changes it and an update does not send it, so a check or address muted or unmuted in the NodePing web interface stays that way. A check or address that sets mute is still managed. Defaults to false.",
 				MarkdownDescription: "Leave `mute` to NodePing on every check and contact address whose configuration does not set it: a plan never changes it and an update does not send it, so a check or address muted or unmuted in the NodePing web interface stays that way. A check or address that sets `mute` is still managed. Defaults to `false`.",
 				Optional:            true,
+			},
+			"plan": schema.StringAttribute{
+				Description:         "The account's NodePing plan: personal, professional or premiere. Leave it out for an older or unknown plan, such as a grandfathered Business plan. A setting that uses a feature the plan lacks fails the plan: homeloc, verifyvolume, volumemin and a voice contact address need premiere; an interval of 0.25 or 0.5 needs professional or premiere; autodiag = true and suppress_diag = true need any of the three.",
+				MarkdownDescription: "The account's NodePing plan: `personal`, `professional` or `premiere`. Leave it out for an older or unknown plan, such as a grandfathered Business plan. A setting that uses a feature the plan lacks fails the plan: `homeloc`, `verifyvolume`, `volumemin` and a `voice` contact address need `premiere`; an `interval` of `0.25` or `0.5` needs `professional` or `premiere`; `autodiag = true` and `suppress_diag = true` need any of the three. See [NodePing plans](#nodeping-plans).",
+				Optional:            true,
+				Validators:          []validator.String{stringvalidator.OneOf(accountplan.Plans...)},
 			},
 		},
 	}
@@ -278,6 +313,7 @@ func (p *NodePingProvider) Configure(ctx context.Context, req provider.Configure
 		UserAgent:    "terraform-provider-nodeping/" + p.version,
 		DefaultTags:  defaultTags,
 		IgnoreMute:   config.IgnoreMute.ValueBool(),
+		AccountPlan:  config.Plan.ValueString(),
 		// Empty outside tests: the client's own.
 		ReadBackWaits: p.readBackWaits,
 	}
@@ -317,6 +353,7 @@ func unknownSettings(config NodePingProviderModel) diag.Diagnostics {
 		{"retry_wait_max", config.RetryWaitMax.IsUnknown(), ""},
 		{"default_tags", config.DefaultTags.IsUnknown() || slices.ContainsFunc(config.DefaultTags.Elements(), attr.Value.IsUnknown), ""},
 		{"ignore_mute", config.IgnoreMute.IsUnknown(), ""},
+		{"plan", config.Plan.IsUnknown(), ""},
 	}
 
 	var diags diag.Diagnostics

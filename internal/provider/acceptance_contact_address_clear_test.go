@@ -159,11 +159,12 @@ func addrClearImport() resource.TestStep {
 	}
 }
 
+// suppress_diag needs a NodePing plan the mock does not answer like by
+// default; TestAccPlan_suppressDiagSwitchedOff covers it.
 var addrClearFlags = []struct{ attr, key string }{
 	{"suppress_up", "suppressup"},
 	{"suppress_down", "suppressdown"},
 	{"suppress_first", "suppressfirst"},
-	{"suppress_diag", "suppressdiag"},
 	{"suppress_all", "suppressall"},
 }
 
