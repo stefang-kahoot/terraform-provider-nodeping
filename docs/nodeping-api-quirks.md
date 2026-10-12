@@ -24,6 +24,7 @@ does, and it is the source for a support request to NodePing.
 | 10 | A parameter the check type does not take is dropped without a word | Which parameters each type takes, nearly right | Say so in the answer, and fix the per-type lists | Low |
 | 11 | A type change freezes the old type's parameters | Nothing | Document it, or let an update clear them | Low |
 | 12 | A check created without `sens` holds none | "Defaults to 2" | Store the default, or document what none means | Low |
+| 13 | An invalid check value is refused, ignored or changed | `interval` 0.25, 0.5 or an integer from 1; `sens` and `threshold` from 1 | Refuse every invalid value, naming the field | Low |
 
 ## 1. Errors come back with HTTP 200
 
@@ -218,6 +219,56 @@ sources alike. That is the documented default and the value the resource plans
 when the configuration leaves `sens` out, so an import of such a check plans
 clean.
 
+## 13. An invalid check value is refused, ignored or changed
+
+The docs give `interval` as 0.25, 0.5 or an integer from 1, `sens` as a
+positive integer and `threshold` as an integer from 1. A check update or
+create with another value is refused, with an error that names the field or
+with a generic one, or it is ignored, or truncated. A negative `sens` or
+`threshold` is stored. We sent the provider's request bodies, which always
+carry `type`, in October 2026:
+
+| Value sent | Update | Create |
+|------------|--------|--------|
+| `interval` -1 | Refused: `Invalid check interval` | The same |
+| `interval` 0.25 or 0.5 | Refused on our account: `Invalid check interval`. The docs allow both; they depend on the account's plan | The same |
+| `interval` 0, 0.3 or `"abc"` | Ignored: the check keeps its interval | Ignored: the check gets 15 |
+| `interval` 2.5 or 1.7 | Truncated to 2 or 1 | The same |
+| `sens` 0 | Refused: `Unable to update check.` | Refused: `Unable to create check.` |
+| `threshold` 0 | Refused: `Unable to update check.` | Stored as 5, the default |
+| `sens` or `threshold` -1 | Stored | Stored |
+| `sens` or `threshold` up to 1,000,000 | Stored: no upper bound found | Stored |
+| `target` "not a url" (HTTP) | Refused: `target: Invalid URL` | The same |
+
+- A refusal answers 200 with only `error` (#1). Nothing in the request is
+  applied, the label included, and `modified` does not move. `Unable to update
+  check.` does not name the field.
+- An ignored or truncated value answers 200 with the check and no error. The
+  rest of the request is applied, and `modified` moves as for any update. The
+  answer is not a stale one (#9): the first `GET` agrees with it.
+- `target` is checked only when the update carries `type`. A `PUT` of
+  `{"target": "not a url"}` alone stores it as sent.
+
+**Effect:** a client that trusts the status and the error takes an ignored or
+truncated value as applied. Terraform fails the apply with "Provider produced
+inconsistent result after apply", which names the attribute but not the
+cause; after a create, the check exists all the same. A negative `sens` or
+`threshold` is stored, although the docs ask for 1 or more.
+
+**Provider:** the values NodePing is known to refuse, ignore or truncate are
+refused at plan time, before anything is sent: `sens` and `threshold` below 1,
+and an `interval` other than 0.25, 0.5 or a whole number of at least 1. Any
+other value NodePing accepts but does not apply fails the apply with
+Terraform's own "Provider produced inconsistent result after apply", which
+names the attribute.
+
+None of these values takes #9's stale-answer path, so none can end in its
+advice that applying again is safe. A refused value fails the apply with
+NodePing's error before any answer is mapped, and moves no `modified`. An
+ignored or truncated value moves `modified` like any other update, so the
+answer is not taken for a stale one. Every update in the probe behaved this
+way.
+
 ## Raising it with NodePing
 
 The API has carried version 1 in its URL since the start, and its changelog
@@ -227,8 +278,9 @@ some of these behaviours, so the request should be split by risk:
 1. **Documentation only, no risk:** #2's current answers, #4, #6, #7, #8,
    #11, what #12's missing `sens` means, and #10's per-type lists.
 2. **Small fixes:** #3's message, #5 in the web UI, #9's stale answers, #12's
-   default stored on create, and a note in the answer when #10 drops a
-   parameter.
+   default stored on create, a note in the answer when #10 drops a
+   parameter, and an error naming the field for each of #13's invalid
+   values.
 3. **Breaking:** real status codes (#1) and 404s (#2). Ask whether they
    would offer these as an opt-in (a request header or query parameter) or in
    an `/api/2`, rather than changing `/api/1`. Note that #1 is also a docs

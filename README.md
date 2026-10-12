@@ -280,9 +280,9 @@ Manages a NodePing monitoring check.
 | `target` | string | Conditional | Target URL/hostname/IP |
 | `label` | string | No | Display label |
 | `enabled` | bool | No | Enable the check |
-| `interval` | float | No | Check interval in minutes |
-| `threshold` | int | No | Timeout in seconds |
-| `sens` | int | No | Rechecks before status change |
+| `interval` | float | No | Check interval in minutes: 0.25, 0.5, or a whole number of at least 1 |
+| `threshold` | int | No | Timeout in seconds, at least 1 |
+| `sens` | int | No | Rechecks before status change, at least 1 |
 | `dep` | string | No | Check ID for notification dependency (suppresses notifications if dependent check is failing) |
 | `runlocations` | list | No | Probe locations |
 | `tags` | list | No | Tags for grouping |

@@ -228,24 +228,31 @@ resource "nodeping_check" "example" {
 				Default:     booldefault.StaticBool(false),
 			},
 			"interval": schema.Float64Attribute{
-				Description: "How often the check runs in minutes. Can be 0.25, 0.5, or any integer >= 1.",
+				Description: "How often the check runs, in minutes: 0.25, 0.5, or a whole number of at least 1.",
 				Optional:    true,
 				Computed:    true,
 				Default:     float64default.StaticFloat64(15),
+				Validators:  []validator.Float64{intervalValue{}},
 			},
+			// NodePing refuses a threshold or sens of 0, except that a create
+			// stores a threshold of 0 as 5, and stores a negative one as sent
+			// (docs/nodeping-api-quirks.md, quirk 13). Its docs ask for 1 or
+			// more and give no upper bound; none was found up to 1,000,000.
 			"threshold": schema.Int64Attribute{
-				Description: "Timeout in seconds for the check.",
+				Description: "Timeout in seconds for the check: a whole number of at least 1.",
 				Optional:    true,
 				Computed:    true,
 				Default:     int64default.StaticInt64(5),
+				Validators:  []validator.Int64{int64validator.AtLeast(1)},
 			},
 			"sens": schema.Int64Attribute{
-				Description: "Number of rechecks before status change.",
+				Description: "Number of rechecks before status change: a whole number of at least 1.",
 				Optional:    true,
 				Computed:    true,
 				// NodePing's default, which a check without sens also reads
 				// as; see checkattr.Sens.
-				Default: int64default.StaticInt64(checkattr.DefaultSens),
+				Default:    int64default.StaticInt64(checkattr.DefaultSens),
+				Validators: []validator.Int64{int64validator.AtLeast(1)},
 			},
 			"mute": schema.BoolAttribute{
 				Description: "Mute all notifications for this check. With the provider's ignore_mute set and mute left out, the check's mute is left to NodePing.",
