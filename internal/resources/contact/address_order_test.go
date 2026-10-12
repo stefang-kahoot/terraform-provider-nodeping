@@ -107,6 +107,15 @@ func TestOnlyAddressOrderChanged(t *testing.T) {
 		{"a contact without addresses", func(plan, prior *ContactResourceModel) {
 			plan.Addresses, prior.Addresses = nil, nil
 		}, true},
+		// The data plan modifier keeps the prior text for the same JSON only
+		// at the block's own position, where the prior address here is
+		// another webhook with another body. The block is compared with its
+		// own address's prior value instead.
+		{"data that is the same JSON written differently, another body at its position", func(plan, prior *ContactResourceModel) {
+			prior.Addresses[2].Data = types.StringValue(`{"msg":"{label} {event}"}`)
+			plan.Addresses[1].Data = types.StringValue(`{"msg":"{label} {event}"}`)
+			plan.Addresses[2].Data = types.StringValue(`{ "text": "{label} is {event}" }`)
+		}, true},
 
 		// What the plan cannot skip.
 		{"the contact renamed", func(plan, _ *ContactResourceModel) { plan.Name = types.StringValue("ops-2") }, false},
@@ -143,8 +152,15 @@ func TestOnlyAddressOrderChanged(t *testing.T) {
 			prior.Addresses[2].ID = prior.Addresses[1].ID
 			plan.Addresses[1].ID = prior.Addresses[1].ID
 		}, false},
-		{"data that is the same JSON written differently", func(plan, _ *ContactResourceModel) {
-			plan.Addresses[2].Data = types.StringValue(`{"text": "{label} is {event}"}`)
+		{"data that is different JSON", func(plan, _ *ContactResourceModel) {
+			plan.Addresses[2].Data = types.StringValue(`{"text":"{label} is {event}!"}`)
+		}, false},
+		{"data that is not JSON, with a space added", func(plan, prior *ContactResourceModel) {
+			prior.Addresses[0].Data = types.StringValue("{label} is {event}")
+			plan.Addresses[2].Data = types.StringValue("{label} is {event} ")
+		}, false},
+		{"data where state has none", func(plan, _ *ContactResourceModel) {
+			plan.Addresses[0].Data = types.StringValue("{}")
 		}, false},
 		{"empty headers where state has none", func(plan, _ *ContactResourceModel) {
 			plan.Addresses[0].Headers = orderMap(map[string]string{})
@@ -233,7 +249,9 @@ func nearMisses(t *testing.T, v attr.Value) []attr.Value {
 		if v.IsNull() {
 			return []attr.Value{types.StringValue(""), types.StringUnknown()}
 		}
-		misses := []attr.Value{types.StringNull(), types.StringUnknown(), types.StringValue(v.ValueString() + " ")}
+		// "x" rather than a space: no JSON ends in it, so data with it added
+		// cannot pass for the same JSON written differently.
+		misses := []attr.Value{types.StringNull(), types.StringUnknown(), types.StringValue(v.ValueString() + "x")}
 		if v.ValueString() != "" {
 			misses = append(misses, types.StringValue(""))
 		}

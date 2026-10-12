@@ -27,12 +27,12 @@ import (
 //     included, equals that of the prior address with its ID.
 //
 // Equal means equal as state holds the values, not as NodePing might take
-// them: a null map is not an empty one, a missing priority is not 0, and data
-// that is the same JSON written differently is not the same data, since the
-// update would store the planned text. A value not known until apply is never
-// equal. Anything in doubt reports false, and the update is sent: a needless
-// update is harmless, while a skipped one would leave NodePing out of step
-// with state.
+// them: a null map is not an empty one, and a missing priority is not 0. The
+// one exception is data, where the same JSON written differently is equal,
+// as it is to the data plan modifier; see sameData. A value not known until
+// apply is never equal. Anything in doubt reports false, and the update is
+// sent: a needless update is harmless, while a skipped one would leave
+// NodePing out of step with state.
 func onlyAddressOrderChanged(plan, prior ContactResourceModel) bool {
 	if !same(plan.ID, prior.ID) || !same(plan.CustomerID, prior.CustomerID) ||
 		!same(plan.Name, prior.Name) || !same(plan.CustRole, prior.CustRole) ||
@@ -81,8 +81,23 @@ func sameAddress(planned, prior AddressModel) bool {
 		same(planned.Action, prior.Action) &&
 		same(planned.Headers, prior.Headers) &&
 		same(planned.QueryStrings, prior.QueryStrings) &&
-		same(planned.Data, prior.Data) &&
+		sameData(planned.Data, prior.Data) &&
 		same(planned.Priority, prior.Priority)
+}
+
+// sameData reports whether planned data is the same as the prior data: equal,
+// or the same JSON written differently, which the data plan modifier takes
+// for no change (JSONSemanticEqual). That modifier keeps the prior text only
+// for a block at its own position, as Terraform accepts no planned value but
+// the configuration's or the prior one at the same position. A reordered
+// block therefore plans the configuration's text, and is compared here with
+// its own address's prior value. The next refresh reads NodePing's text, and
+// the modifier keeps it.
+func sameData(planned, prior types.String) bool {
+	if same(planned, prior) {
+		return true
+	}
+	return isKnown(planned) && isKnown(prior) && jsonSemanticEqual(planned.ValueString(), prior.ValueString())
 }
 
 // same reports whether a planned value is known and equal to the prior one:

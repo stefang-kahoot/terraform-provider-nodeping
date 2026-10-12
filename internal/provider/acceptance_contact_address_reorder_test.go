@@ -468,3 +468,135 @@ func reorderUpdateSent(mock *testutil.MockNodePingServer, name string, headers m
 		return nil
 	}
 }
+
+// Two webhooks, each with a body. NodePing holds the bodies as compact JSON,
+// and the configuration writes the first one's with spaces: the same JSON,
+// written differently.
+const (
+	reorderDataOneID = "ACC-REORDER-W1"
+	reorderDataTwoID = "ACC-REORDER-W2"
+
+	reorderDataOne = `
+  address {
+    type    = "webhook"
+    address = "https://hooks.example.com/one"
+    action  = "post"
+    data    = "{\"text\":\"{label} is {event}\"}"
+  }
+`
+	reorderDataOneSpaced = `
+  address {
+    type    = "webhook"
+    address = "https://hooks.example.com/one"
+    action  = "post"
+    data    = "{\"text\": \"{label} is {event}\"}"
+  }
+`
+	reorderDataTwo = `
+  address {
+    type    = "webhook"
+    address = "https://hooks.example.com/two"
+    action  = "post"
+    data    = "{\"msg\":\"{label} {event}\"}"
+  }
+`
+)
+
+// A reordered webhook whose data is the same JSON as NodePing's, written
+// differently, is no change either: the data plan modifier keeps NodePing's
+// text for the same JSON. That modifier compares by position, though, so in
+// a reordered block it compared against the other webhook's body and planned
+// the configuration's text. That text went out, NodePing's answer read back
+// as compact JSON, and the apply failed with "Provider produced inconsistent
+// result after apply". Now the apply sends nothing and the re-plan is empty,
+// after an import and after a swap.
+func TestAccContactResource_reorderedWebhookDataWrittenDifferently(t *testing.T) {
+	tests := []struct {
+		name string
+		// steps seeds the mock or returns the steps that create the contact,
+		// and returns the configuration that reorders it. The contact's ID
+		// goes into contactID once known.
+		steps func(mock *testutil.MockNodePingServer, contactID *string) ([]resource.TestStep, string)
+	}{
+		{
+			name: "import",
+			steps: func(mock *testutil.MockNodePingServer, contactID *string) ([]resource.TestStep, string) {
+				mock.AddContact(reorderContactID, map[string]interface{}{
+					"_id":         reorderContactID,
+					"type":        "contact",
+					"customer_id": "MOCK-CUSTOMER",
+					"name":        "acc-reorder",
+					"custrole":    "notify",
+					"addresses": map[string]interface{}{
+						reorderDataOneID: map[string]interface{}{
+							"type": "webhook", "address": "https://hooks.example.com/one", "action": "post",
+							"data": `{"text":"{label} is {event}"}`,
+						},
+						reorderDataTwoID: map[string]interface{}{
+							"type": "webhook", "address": "https://hooks.example.com/two", "action": "post",
+							"data": `{"msg":"{label} {event}"}`,
+						},
+					},
+				})
+				*contactID = reorderContactID
+				return nil, reorderImportConfig(mock.URL(), "acc-reorder", reorderDataTwo, reorderDataOneSpaced)
+			},
+		},
+		{
+			name: "swap",
+			steps: func(mock *testutil.MockNodePingServer, contactID *string) ([]resource.TestStep, string) {
+				config := func(blocks ...string) string {
+					return providerConfig(mock.URL()) + fmt.Sprintf(`
+resource "nodeping_contact" "ids" {
+  name = "acc-reorder"
+%s}
+`, strings.Join(blocks, ""))
+				}
+				create := resource.TestStep{
+					Config: config(reorderDataOne, reorderDataTwo),
+					Check: func(s *terraform.State) error {
+						id, _, err := contactAddressesInState(s)
+						*contactID = id
+						return err
+					},
+				}
+				return []resource.TestStep{create}, config(reorderDataTwo, reorderDataOneSpaced)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := testutil.NewMockNodePingServer()
+			t.Cleanup(mock.Close)
+
+			var contactID, snapshot string
+			steps, reordered := tt.steps(mock, &contactID)
+			steps = append(steps, resource.TestStep{
+				PreConfig: func() {
+					var err error
+					if snapshot, err = mockContactJSON(mock, contactID); err != nil {
+						t.Fatal(err)
+					}
+				},
+				Config: reordered,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply:             []plancheck.PlanCheck{plancheck.ExpectResourceAction(addressIDsContact, plancheck.ResourceActionUpdate)},
+					PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					contactPUTs(mock, 0),
+					resource.TestCheckResourceAttr(addressIDsContact, "address.0.address", "https://hooks.example.com/two"),
+					resource.TestCheckResourceAttr(addressIDsContact, "address.1.address", "https://hooks.example.com/one"),
+					mockContactUnchanged(mock, &snapshot),
+					stateMatchesMock(mock),
+				),
+			})
+
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: protoV6ProviderFactories(),
+				Steps:                    steps,
+			})
+		})
+	}
+}
