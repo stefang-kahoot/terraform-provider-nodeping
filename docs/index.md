@@ -65,6 +65,8 @@ provider "nodeping" {
 - `NODEPING_CUSTOMER_ID` - Default SubAccount customer ID
 - `NODEPING_API_URL` - API base URL (for testing)
 
+Every setting must be known when Terraform plans. One taken from a resource that is still to be created, such as `api_token = terraform_data.token.output`, fails the plan, and its environment variable does not stand in for it, since the configured value overrides it. Apply that resource first, for example with `-target`.
+
 ## Multi-Account Usage
 
 Use provider aliases to manage multiple accounts or subaccounts:
@@ -149,9 +151,9 @@ A check or address that sets `mute` itself is still managed, the same as without
 - `api_token` (String, Sensitive) - NodePing API token. Can also be set via `NODEPING_API_TOKEN` environment variable.
 - `customer_id` (String) - SubAccount customer ID for managing SubAccount resources. Can also be set via `NODEPING_CUSTOMER_ID` environment variable.
 - `api_url` (String) - NodePing API base URL. Defaults to `https://api.nodeping.com/api/1`. Can also be set via `NODEPING_API_URL` environment variable.
-- `rate_limit` (Number) - Maximum requests per second to the NodePing API. Defaults to `10`.
-- `max_retries` (Number) - Maximum number of retries for a failed request: one answered 429 or with a server error, or whose connection failed. A request that creates something is retried only if it cannot have reached NodePing. Defaults to `3`.
-- `retry_wait_min` (Number) - Minimum wait time in seconds between retries. Defaults to `1`.
-- `retry_wait_max` (Number) - Maximum wait time in seconds between retries, also for a 429 that asks for a longer wait in `Retry-After`. Defaults to `30`.
+- `rate_limit` (Number) - Maximum requests per second to the NodePing API, greater than `0`. Defaults to `10`.
+- `max_retries` (Number) - Maximum number of retries for a failed request: one answered 429 or with a server error, or whose connection failed. A request that creates something is retried only if it cannot have reached NodePing. `0` turns retries off. Defaults to `3`.
+- `retry_wait_min` (Number) - Minimum wait time in seconds between retries. `0` sends retries without waiting, unless a 429 asks for a wait in `Retry-After`. Defaults to `1`.
+- `retry_wait_max` (Number) - Maximum wait time in seconds between retries, also for a 429 that asks for a longer wait in `Retry-After`. `0` sends retries without waiting, even after such a 429. Defaults to `30`.
 - `default_tags` (List of String) - Default tags to apply to all resources that support tags (e.g., checks). These tags are merged with resource-specific tags.
 - `ignore_mute` (Boolean) - Leave `mute` to NodePing on every check and contact address whose configuration does not set it: a plan never changes it and an update does not send it, so a check or address muted or unmuted in the NodePing web interface stays that way. A check or address that sets `mute` is still managed. Defaults to `false`. See [Muting in NodePing](#muting-in-nodeping).

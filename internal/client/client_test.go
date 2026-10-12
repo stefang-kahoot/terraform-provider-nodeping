@@ -45,8 +45,26 @@ func TestNewClientDefaults(t *testing.T) {
 	if c.baseURL != DefaultBaseURL {
 		t.Errorf("expected default baseURL %q, got %q", DefaultBaseURL, c.baseURL)
 	}
-	if c.maxRetries != DefaultMaxRetries {
-		t.Errorf("expected default maxRetries %d, got %d", DefaultMaxRetries, c.maxRetries)
+	// 0 is no retries and no wait, not unset: max_retries = 0 turns
+	// retries off.
+	if c.maxRetries != 0 || c.retryMinWait != 0 || c.retryMaxWait != 0 {
+		t.Errorf("expected no retries and no waits, got maxRetries %d, retryMinWait %v, retryMaxWait %v",
+			c.maxRetries, c.retryMinWait, c.retryMaxWait)
+	}
+}
+
+// Less than 0 retries, or a wait less than 0, is taken as 0.
+func TestNewClientNegativeRetries(t *testing.T) {
+	c := NewClient(ClientConfig{
+		APIToken:     "test-token",
+		MaxRetries:   -1,
+		RetryMinWait: -time.Second,
+		RetryMaxWait: -time.Second,
+	})
+
+	if c.maxRetries != 0 || c.retryMinWait != 0 || c.retryMaxWait != 0 {
+		t.Errorf("expected no retries and no waits, got maxRetries %d, retryMinWait %v, retryMaxWait %v",
+			c.maxRetries, c.retryMinWait, c.retryMaxWait)
 	}
 }
 

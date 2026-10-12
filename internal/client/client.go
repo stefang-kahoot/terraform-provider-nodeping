@@ -50,6 +50,10 @@ type Client struct {
 	contactGroupList listCache
 }
 
+// ClientConfig configures a Client. A field left zero takes its default,
+// except MaxRetries, RetryMinWait and RetryMaxWait, where 0 is a setting of
+// its own: no retries, or no wait. Their defaults are DefaultMaxRetries,
+// DefaultRetryMinWait and DefaultRetryMaxWait.
 type ClientConfig struct {
 	APIToken     string
 	CustomerID   string
@@ -77,15 +81,11 @@ func NewClient(cfg ClientConfig) *Client {
 	if cfg.RateLimit <= 0 {
 		cfg.RateLimit = DefaultRateLimit
 	}
-	if cfg.MaxRetries <= 0 {
-		cfg.MaxRetries = DefaultMaxRetries
-	}
-	if cfg.RetryMinWait <= 0 {
-		cfg.RetryMinWait = DefaultRetryMinWait
-	}
-	if cfg.RetryMaxWait <= 0 {
-		cfg.RetryMaxWait = DefaultRetryMaxWait
-	}
+	// Less than 0 is taken as 0: fewer retries than none would not send the
+	// request at all.
+	cfg.MaxRetries = max(cfg.MaxRetries, 0)
+	cfg.RetryMinWait = max(cfg.RetryMinWait, 0)
+	cfg.RetryMaxWait = max(cfg.RetryMaxWait, 0)
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = DefaultTimeout
 	}
