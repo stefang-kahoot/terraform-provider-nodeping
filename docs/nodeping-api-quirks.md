@@ -23,7 +23,7 @@ does, and it is the source for a support request to NodePing.
 | 9 | An update is sometimes answered with the check as it was before | Returns the check "created or modified" | Answer with the updated check | None |
 | 10 | A parameter the check type does not take is dropped without a word | Which parameters each type takes, nearly right | Say so in the answer, and fix the per-type lists | Low |
 | 11 | A type change freezes the old type's parameters | Nothing | Document it, or let an update clear them | Low |
-| 12 | A check created without `sens` holds none | "Defaults to 2" | Store the default, or document that none means 2 | Low |
+| 12 | A check created without `sens` holds none | "Defaults to 2" | Store the default, or document what none means | Low |
 
 ## 1. Errors come back with HTTP 200
 
@@ -208,12 +208,15 @@ creates a check that holds no `sens` at all: its `parameters` held only
 `target` and `threshold` when we tried it in October 2026. A check made in the
 web UI holds `sens`.
 
-**Effect:** a client that reads such a check sees no `sens`, and has to know
-the default to tell what the check runs with. The provider read it as unset,
-so no configuration could import the check without a plan that wrote `sens`.
+**Effect:** a client that reads such a check sees no `sens`, and cannot tell
+from it what the check runs with. The docs suggest 2, but we have not verified
+that NodePing runs such a check with 2. The provider read it as unset, so no
+configuration could import the check without a plan that wrote `sens`.
 
-**Provider:** reads a missing `sens` as 2, the documented default, in the check
-resource and the data sources alike.
+**Provider:** reads a missing `sens` as 2 in the check resource and the data
+sources alike. That is the documented default and the value the resource plans
+when the configuration leaves `sens` out, so an import of such a check plans
+clean.
 
 ## Raising it with NodePing
 
