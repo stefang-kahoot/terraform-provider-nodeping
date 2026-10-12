@@ -387,32 +387,6 @@ resource "nodeping_contactgroup" "imported" {
 	})
 }
 
-// A group with no name at all. The API answers with an empty string, which
-// must not become a literal "" in the imported state when the configuration
-// leaves the attribute unset.
-func TestAccContactGroupResource_importRoundTripsUnnamed(t *testing.T) {
-	mock := testutil.NewMockNodePingServer()
-	t.Cleanup(mock.Close)
-
-	config := providerConfig(mock.URL()) + `
-resource "nodeping_contactgroup" "imported" {
-}
-`
-
-	resource.Test(t, resource.TestCase{
-		ProtoV6ProviderFactories: protoV6ProviderFactories(),
-		Steps: []resource.TestStep{
-			{Config: config},
-			{
-				Config:            config,
-				ResourceName:      "nodeping_contactgroup.imported",
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-		},
-	})
-}
-
 // NodePing stores some headers as null -- {"Host": null} -- meaning no such
 // header. Read as "", the check could not be imported without a plan: leaving
 // sendheaders out planned {"Host" = ""} -> null, and { "Host" = null } an

@@ -43,8 +43,10 @@ func TestContactSchemaCoreAttributes(t *testing.T) {
 	if !ok {
 		t.Fatal("schema is missing the name attribute")
 	}
-	if !name.IsRequired() && !name.IsOptional() {
-		t.Error("name must be settable by the user")
+	// NodePing cannot clear a contact's name, so a configuration cannot go
+	// without one.
+	if !name.IsRequired() {
+		t.Error("name must be Required")
 	}
 }
 

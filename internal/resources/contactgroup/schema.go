@@ -4,7 +4,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/notblank"
 )
 
 type ContactGroupResourceModel struct {
@@ -80,6 +83,10 @@ Contact groups can be imported using the group ID:
 terraform import nodeping_contactgroup.example 201205050153W2Q4C-G-1ZIYU
 ` + "```" + `
 
+A group that NodePing holds without a name, created outside Terraform,
+imports with an empty name. The plan after the import then updates it in
+place to set the configuration's ` + "`name`" + `.
+
 To import a contact group from a SubAccount, give the resource a provider
 configured with the SubAccount's ` + "`customer_id`" + ` and import it by its
 plain ID, as above. That provider sends the customer ID with every request,
@@ -113,9 +120,15 @@ resource "nodeping_contactgroup" "example" {
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			// Required and not blank: NodePing keeps a group's name when an
+			// update leaves it out or sends "", null or " ", so it cannot be
+			// removed. See the notblank package.
 			"name": schema.StringAttribute{
-				Description: "The display name of the contact group.",
-				Optional:    true,
+				Description: "The display name of the contact group. It cannot be empty or only whitespace: NodePing can change a group's name, but not remove it.",
+				Required:    true,
+				Validators: []validator.String{
+					notblank.Validator(),
+				},
 			},
 			"members": schema.ListAttribute{
 				Description:         "Contact address IDs belonging to this group. These are address IDs, not contact IDs.",

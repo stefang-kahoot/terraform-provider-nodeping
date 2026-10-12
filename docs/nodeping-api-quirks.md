@@ -130,10 +130,15 @@ what we observed:
 - **Contact `addresses`:** when the key is present it replaces the whole list,
   together with `newaddresses`. When the key is absent, every address is kept.
   The docs describe only the case where it is present.
+- **Contact and contact group `name`:** nothing clears it. An update that
+  leaves `name` out, or sends `""`, `null` or `false`, keeps it, and so does
+  `0` for a group (not tried for a contact). `" "` is stored for a contact but
+  ignored for a group. Every one of these answers 200 without an error.
 
 **Provider:** always sends `tags` on an update, as `[]` when empty
 (`f35cf3a`). It sends `addresses` whenever the plan has an address, as `{}`
-when none are kept (`c624d2e`).
+when none are kept (`c624d2e`). It requires `name` on contacts and contact
+groups, and refuses one that is empty or only whitespace at plan time.
 
 ## 9. An update is sometimes answered with the check as it was before
 

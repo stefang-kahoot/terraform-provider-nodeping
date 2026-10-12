@@ -457,6 +457,9 @@ func (r *ContactResource) ImportState(ctx context.Context, req resource.ImportSt
 		return
 	}
 
+	// A contact NodePing holds without a name, created outside Terraform,
+	// imports with an empty one. The name is required, so the next plan sets
+	// it.
 	state := ContactResourceModel{
 		ID:         types.StringValue(contact.ID),
 		CustomerID: types.StringValue(contact.CustomerID),

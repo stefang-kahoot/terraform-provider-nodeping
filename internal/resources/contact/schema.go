@@ -9,6 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/notblank"
 )
 
 type ContactResourceModel struct {
@@ -111,6 +113,10 @@ Contacts can be imported using the contact ID:
 terraform import nodeping_contact.example 201205050153W2Q4C-BKPGH
 ` + "```" + `
 
+A contact that NodePing holds without a name, created outside Terraform,
+imports with an empty name. The plan after the import then updates it in
+place to set the configuration's ` + "`name`" + `.
+
 To import a contact from a SubAccount, give the resource a provider
 configured with the SubAccount's ` + "`customer_id`" + ` and import it by its
 plain ID, as above. That provider sends the customer ID with every request,
@@ -144,9 +150,15 @@ resource "nodeping_contact" "example" {
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			// Required and not blank: NodePing keeps a contact's name when an
+			// update leaves it out or sends "" or null, so it cannot be
+			// removed. See the notblank package.
 			"name": schema.StringAttribute{
-				Description: "The name of the contact. Used as a label.",
-				Optional:    true,
+				Description: "The name of the contact. Used as a label. It cannot be empty or only whitespace: NodePing can change a contact's name, but not remove it.",
+				Required:    true,
+				Validators: []validator.String{
+					notblank.Validator(),
+				},
 			},
 			"custrole": schema.StringAttribute{
 				Description: "The permission role for this contact. Valid values: 'edit', 'view', 'notify'. Defaults to 'notify'.",

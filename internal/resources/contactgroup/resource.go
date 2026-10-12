@@ -85,17 +85,6 @@ func membersToModel(ctx context.Context, apiMembers []string, planned types.List
 	return list
 }
 
-// nameToModel keeps an unset name null. The API answers with an empty string
-// for a group that has no name, and name is Optional rather than Computed, so
-// writing that empty string back would turn a null config value into "" and
-// fail the apply with an inconsistent-result error.
-func nameToModel(apiName string, planned types.String) types.String {
-	if apiName == "" && (planned.IsNull() || planned.IsUnknown()) {
-		return types.StringNull()
-	}
-	return types.StringValue(apiName)
-}
-
 func (r *ContactGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan ContactGroupResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -125,12 +114,11 @@ func (r *ContactGroupResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	plannedName := plan.Name
 	plannedMembers := plan.Members
 
 	plan.ID = types.StringValue(group.ID)
 	plan.CustomerID = types.StringValue(group.CustomerID)
-	plan.Name = nameToModel(group.Name, plannedName)
+	plan.Name = types.StringValue(group.Name)
 	plan.Members = membersToModel(ctx, group.Members, plannedMembers, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
@@ -164,7 +152,7 @@ func (r *ContactGroupResource) Read(ctx context.Context, req resource.ReadReques
 	}
 
 	state.CustomerID = types.StringValue(group.CustomerID)
-	state.Name = nameToModel(group.Name, state.Name)
+	state.Name = types.StringValue(group.Name)
 	state.Members = membersToModel(ctx, group.Members, state.Members, &resp.Diagnostics)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -209,12 +197,11 @@ func (r *ContactGroupResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
-	plannedName := plan.Name
 	plannedMembers := plan.Members
 
 	plan.ID = types.StringValue(group.ID)
 	plan.CustomerID = types.StringValue(group.CustomerID)
-	plan.Name = nameToModel(group.Name, plannedName)
+	plan.Name = types.StringValue(group.Name)
 	plan.Members = membersToModel(ctx, group.Members, plannedMembers, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
@@ -264,10 +251,13 @@ func (r *ContactGroupResource) ImportState(ctx context.Context, req resource.Imp
 		return
 	}
 
+	// A group NodePing holds without a name, created outside Terraform,
+	// imports with an empty one. The name is required, so the next plan sets
+	// it.
 	state := ContactGroupResourceModel{
 		ID:         types.StringValue(group.ID),
 		CustomerID: types.StringValue(group.CustomerID),
-		Name:       nameToModel(group.Name, types.StringNull()),
+		Name:       types.StringValue(group.Name),
 	}
 	state.Members = membersToModel(ctx, group.Members, types.ListNull(types.StringType), &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {

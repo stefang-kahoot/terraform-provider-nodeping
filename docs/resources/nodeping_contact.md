@@ -91,7 +91,7 @@ resource "nodeping_contact" "critical_only" {
 
 ### Top-Level Arguments
 
-- `name` - (Optional) The name of the contact. Used as a display label.
+- `name` - (Required) The name of the contact. Used as a display label. It cannot be empty or only whitespace: NodePing can change a contact's name, but not remove it.
 - `custrole` - (Optional) The permission role for this contact. Valid values: `edit`, `view`, `notify`. Defaults to `notify`.
   - `edit` - Can edit account settings and checks
   - `view` - Can view account settings and checks
@@ -152,6 +152,10 @@ Contacts can be imported using the contact ID:
 ```shell
 terraform import nodeping_contact.example 201205050153W2Q4C-BKPGH
 ```
+
+A contact that NodePing holds without a name, created outside Terraform,
+imports with an empty name. The plan after the import then updates it in
+place to set the configuration's `name`.
 
 To import a contact from a SubAccount, give the resource a provider
 configured with the SubAccount's `customer_id` and import it by its
