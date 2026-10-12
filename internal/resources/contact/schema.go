@@ -128,6 +128,15 @@ resource "nodeping_contact" "example" {
   # ...
 }
 ` + "```" + `
+
+An import reads a contact's addresses in the order of their IDs, since
+NodePing keeps them in no order. If the configuration lists the ` + "`address`" + `
+blocks in another order, the plan after the import shows a one-time in-place
+update: Terraform compares the blocks by position. Applying it sends nothing
+to NodePing when the order is the only difference; the configuration's order
+is written to state, each address under its own ID. The same goes for blocks
+reordered later. If anything else changes as well, the update is sent as
+usual.
 `,
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{

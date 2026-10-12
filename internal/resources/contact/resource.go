@@ -157,6 +157,16 @@ func (r *ContactResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
+	// Terraform plans an update when only the order of the address blocks
+	// changed, as after an import (#30); NodePing has no order to change.
+	if onlyAddressOrderChanged(plan, state) {
+		tflog.Debug(ctx, "Only the order of the contact's addresses changed, not updating it in NodePing", map[string]interface{}{
+			"id": state.ID.ValueString(),
+		})
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+		return
+	}
+
 	tflog.Debug(ctx, "Updating contact", map[string]interface{}{
 		"id": state.ID.ValueString(),
 	})
