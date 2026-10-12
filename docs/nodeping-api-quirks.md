@@ -25,6 +25,7 @@ does, and it is the source for a support request to NodePing.
 | 11 | A type change freezes the old type's parameters | Nothing | Document it, or let an update clear them | Low |
 | 12 | A check created without `sens` holds none | "Defaults to 2" | Store the default, or document what none means | Low |
 | 13 | An invalid check value is refused, ignored or changed | `interval` 0.25, 0.5 or an integer from 1; `sens` and `threshold` from 1 | Refuse every invalid value, naming the field | Low |
+| 14 | An address's `action` cannot be cleared, and its `priority` is not validated | `action` defaults to `get`; `priority` is -2 to 2 and defaults to 2 | Let an update clear `action`; validate `priority`, or document what is stored | Low |
 
 ## 1. Errors come back with HTTP 200
 
@@ -274,6 +275,39 @@ ignored or truncated value moves `modified` like any other update, so the
 answer is not taken for a stale one. Every update in the probe behaved this
 way.
 
+## 14. An address's `action` cannot be cleared, and its `priority` is not validated
+
+On a test SubAccount in October 2026, we created a webhook address with
+`action: "post"` and Pushover addresses, and updated each under its ID:
+
+- **`action`:** an update that leaves it out, or sends `""`, `null`, `false`
+  or `0`, keeps the stored method. Any other string is stored as sent, without
+  validation: `" "`, `"GET"`, `"bogus"`. Once an address has an `action`,
+  nothing leaves it holding none.
+- **`priority`:** whatever a create or update sends is stored: `-3`, `3`,
+  `""`, `"abc"` and `"1"` alike. Nothing is refused. `null` is stored too: the
+  key stays, with the value `null`, and the address holds no priority. An
+  update that leaves `priority` out keeps it.
+- **No default is stored.** An address created without `action` or
+  `priority` holds neither, although the docs say they default to `get` and 2.
+  What NodePing then sends was not observed.
+
+**Effect:** a client cannot remove a webhook's `action`, only change it. A
+`priority` that is not a number, set through the API or perhaps the web UI,
+comes back as it was sent. A client that decodes it as a number fails to read
+the contact, and to list any contact in the account.
+
+**Provider:**
+
+- reads a `priority` that is a whole number, or a string holding one, as that
+  number. `""` and `null` read as none. Anything else reads as none too, with
+  a warning in the log that names the contact and the address, but not the
+  value.
+- sends `null` when the configuration removes `priority`.
+- fails a plan that removes `action` from an existing address, and says to set
+  it to the method the webhook should use.
+- fails a plan whose `priority` is outside -2 to 2, the range the docs give.
+
 ## Raising it with NodePing
 
 The API has carried version 1 in its URL since the start, and its changelog
@@ -281,11 +315,12 @@ records only additions (latest 2025-08-14). Other clients probably depend on
 some of these behaviours, so the request should be split by risk:
 
 1. **Documentation only, no risk:** #2's current answers, #4, #6, #7, #8,
-   #11, what #12's missing `sens` means, and #10's per-type lists.
+   #11, what #12's missing `sens` means, #10's per-type lists, and #14's
+   missing defaults.
 2. **Small fixes:** #3's message, #5 in the web UI, #9's stale answers, #12's
    default stored on create, a note in the answer when #10 drops a
-   parameter, and an error naming the field for each of #13's invalid
-   values.
+   parameter, an error naming the field for each of #13's invalid
+   values, and #14's `priority` validated and a way to clear `action`.
 3. **Breaking:** real status codes (#1) and 404s (#2). Ask whether they
    would offer these as an opt-in (a request header or query parameter) or in
    an `/api/2`, rather than changing `/api/1`. Note that #1 is also a docs

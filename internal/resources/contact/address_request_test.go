@@ -84,7 +84,7 @@ func TestAddressRequest(t *testing.T) {
 	const (
 		hook        = `"address":"https://hooks.example.com/one","type":"webhook"`
 		flagsOff    = `"suppressup":false,"suppressdown":false,"suppressfirst":false,"suppressdiag":false,"suppressall":false`
-		allCleared  = `{` + hook + `,` + flagsOff + `,"mute":false,"headers":{},"querystrings":{}}`
+		allCleared  = `{` + hook + `,` + flagsOff + `,"mute":false,"headers":{},"querystrings":{},"priority":null}`
 		nothingSent = `{` + hook + `,` + flagsOff + `,"mute":false}`
 	)
 
@@ -117,7 +117,9 @@ func TestAddressRequest(t *testing.T) {
 		},
 		{
 			// Findings 32 and 8: left out, NodePing kept the flags, the
-			// mute, the headers and the query strings.
+			// mute, the headers and the query strings; and the priority
+			// (#33). The action and the data cannot be cleared; ModifyPlan
+			// refuses to remove them.
 			name:  "an existing address clears what the plan removed",
 			addr:  bare,
 			prior: &priorEverySet,

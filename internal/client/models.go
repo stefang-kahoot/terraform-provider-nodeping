@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
+	"strconv"
 )
 
 type Contact struct {
@@ -29,7 +31,68 @@ type ContactAddress struct {
 	Headers       map[string]string `json:"headers,omitempty"`
 	QueryStrings  map[string]string `json:"querystrings,omitempty"`
 	Data          interface{}       `json:"data,omitempty"`
-	Priority      *int              `json:"priority,omitempty"`
+	// Priority is nil when the address holds none. NodePing stores any
+	// priority sent, unvalidated, so it is read leniently; see readPriority.
+	Priority *int `json:"priority,omitempty"`
+
+	// unreadablePriority is whether the address holds a priority that
+	// readPriority could not read, and read as none.
+	unreadablePriority bool
+}
+
+// UnmarshalJSON decodes an address, reading its priority with readPriority.
+// Decoded as a number, one address holding "" or "abc" failed the read of its
+// contact, and the list of every contact in the account.
+func (a *ContactAddress) UnmarshalJSON(data []byte) error {
+	// Plain has the fields of ContactAddress but not this method.
+	type Plain ContactAddress
+	decoded := struct {
+		*Plain
+		Priority json.RawMessage `json:"priority"`
+	}{Plain: (*Plain)(a)}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	a.Priority, a.unreadablePriority = readPriority(decoded.Priority)
+	return nil
+}
+
+// readPriority reads a Pushover priority as NodePing holds it. NodePing
+// stores whatever a create or update sends: numbers, strings, "" and null. A
+// whole number reads as itself, and a string holding one as that number. No
+// priority, null and "" read as none. Anything else is unreadable, and reads
+// as none too.
+func readPriority(raw json.RawMessage) (priority *int, unreadable bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value interface{}
+	if err := decoder.Decode(&value); err != nil {
+		return nil, true
+	}
+
+	var text string
+	switch v := value.(type) {
+	case nil:
+		return nil, false
+	case json.Number:
+		text = v.String()
+	case string:
+		if v == "" {
+			return nil, false
+		}
+		text = v
+	default:
+		return nil, true
+	}
+
+	n, err := strconv.Atoi(text)
+	if err != nil {
+		return nil, true
+	}
+	return &n, false
 }
 
 // AddressRequest is an address as a create or an update writes it: in
@@ -56,7 +119,40 @@ type AddressRequest struct {
 	Headers      map[string]string `json:"headers,omitzero"`
 	QueryStrings map[string]string `json:"querystrings,omitzero"`
 	Data         string            `json:"data,omitempty"`
-	Priority     *int              `json:"priority,omitempty"`
+	// Priority, when sent, replaces the address's priority. NodePing stores
+	// whatever is sent, "" included; null is the one value that leaves the
+	// address holding none.
+	Priority Nullable[int] `json:"priority,omitzero"`
+}
+
+// Nullable is a request field that is left out, sent as null, or sent with a
+// value. NodePing keeps a field an update leaves out, and clears some only
+// when sent null, which a pointer under omitempty cannot send. Under an
+// omitzero tag the zero value is left out; NullOf sends null and ValueOf a
+// value.
+type Nullable[T any] struct {
+	value *T
+	sent  bool
+}
+
+// ValueOf returns a Nullable that sends v.
+func ValueOf[T any](v T) Nullable[T] {
+	return Nullable[T]{value: &v, sent: true}
+}
+
+// NullOf returns a Nullable that sends null.
+func NullOf[T any]() Nullable[T] {
+	return Nullable[T]{sent: true}
+}
+
+// IsZero reports whether n is left out of a request under omitzero.
+func (n Nullable[T]) IsZero() bool {
+	return !n.sent
+}
+
+// MarshalJSON sends the value, or null.
+func (n Nullable[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(n.value)
 }
 
 // ContactGroup groups contact addresses so a check can notify all of them
