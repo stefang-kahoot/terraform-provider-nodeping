@@ -807,7 +807,7 @@ func (r *CheckResource) mapCheckToModel(ctx context.Context, check *client.Check
 	model.Description = keepIf(holds, model.Description, a.Description, isEmptyDescription)
 	model.Interval = keep(holds, model.Interval, a.Interval)
 	model.Threshold = keep(holds, model.Threshold, a.Threshold)
-	model.Sens = keep(holds, model.Sens, a.Sens)
+	model.Sens = keep(holds, model.Sens, answeredSens(check, holds, a.Sens))
 	model.RunLocations = keep(holds, model.RunLocations, a.RunLocations)
 	model.HomeLoc = keep(holds, model.HomeLoc, a.HomeLoc)
 
@@ -955,6 +955,18 @@ func keepIf[T attr.Value](holds modelHolds, current, fromAPI T, empty func(attr.
 		return current
 	}
 	return fromAPI
+}
+
+// answeredSens is the sens mapCheckToModel resolves through keep. checkattr
+// reads a check without sens as holding NodePing's default (checkattr.Sens),
+// which is what a refresh and an import go by. An apply's answer without sens
+// says nothing about the sens just sent, so it keeps the planned value, as
+// keep does for any value an answer leaves out.
+func answeredSens(check *client.Check, holds modelHolds, read types.Int64) types.Int64 {
+	if holds == thePlan && check.Parameters.Sens == nil {
+		return types.Int64Null()
+	}
+	return read
 }
 
 // notificationsToModel converts the shared notification shape to the

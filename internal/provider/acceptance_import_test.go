@@ -606,3 +606,62 @@ resource "nodeping_check" "imported" {
 		},
 	})
 }
+
+// A check created through the API without sens holds none. It is seeded the
+// way NodePing returned one: target and threshold under its parameters, and
+// nothing else. Read as null, such a check could not be imported without a
+// plan. Leaving sens out planned the schema default, null -> 2, and so did
+// sens = null; the apply then wrote sens to NodePing. It reads as 2,
+// NodePing's documented default, so a configuration that leaves sens out
+// imports it clean, and the data sources say the same.
+func TestAccCheckResource_importReadsMissingSensAsDefault(t *testing.T) {
+	mock := testutil.NewMockNodePingServer()
+	t.Cleanup(mock.Close)
+
+	mock.AddCheck("NO-SENS", map[string]interface{}{
+		"_id":      "NO-SENS",
+		"type":     "HTTP",
+		"label":    "acc-no-sens",
+		"enable":   "active",
+		"interval": 15,
+		"parameters": map[string]interface{}{
+			"target":    "https://example.com/",
+			"threshold": 5,
+		},
+	})
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: protoV6ProviderFactories(),
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig(mock.URL()) + `
+resource "nodeping_check" "imported" {
+  type    = "HTTP"
+  target  = "https://example.com/"
+  label   = "acc-no-sens"
+  enabled = true
+}
+`,
+				ResourceName:    "nodeping_check.imported",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithID,
+				ImportStateId:   "NO-SENS",
+			},
+			{
+				Config: providerConfig(mock.URL()) + `
+data "nodeping_check" "no_sens" {
+  id = "NO-SENS"
+}
+
+data "nodeping_checks" "http" {
+  type = "HTTP"
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.nodeping_check.no_sens", "sens", "2"),
+					resource.TestCheckResourceAttr("data.nodeping_checks.http", "checks.0.sens", "2"),
+				),
+			},
+		},
+	})
+}

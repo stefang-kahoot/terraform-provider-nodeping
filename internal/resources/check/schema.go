@@ -13,6 +13,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/stefang-kahoot/terraform-provider-nodeping/internal/datasources/checkattr"
 )
 
 var ValidCheckTypes = []string{
@@ -241,7 +243,9 @@ resource "nodeping_check" "example" {
 				Description: "Number of rechecks before status change.",
 				Optional:    true,
 				Computed:    true,
-				Default:     int64default.StaticInt64(2),
+				// NodePing's default, which a check without sens also reads
+				// as; see checkattr.Sens.
+				Default: int64default.StaticInt64(checkattr.DefaultSens),
 			},
 			"mute": schema.BoolAttribute{
 				Description: "Mute all notifications for this check. With the provider's ignore_mute set and mute left out, the check's mute is left to NodePing.",

@@ -57,7 +57,9 @@ func TestMapCheckToModelKeepsPlannedValuesTheAPIOmits(t *testing.T) {
 
 			Interval:  types.Float64Value(15),
 			Threshold: types.Int64Value(5),
-			Sens:      types.Int64Value(2),
+			// Not 2: a check without sens reads as 2 (checkattr.Sens), which
+			// would pass whether or not the planned value were kept.
+			Sens: types.Int64Value(3),
 		}
 	}
 
@@ -190,6 +192,50 @@ func TestMapCheckToModelFillsAnEmptyModelOnImport(t *testing.T) {
 	}
 	if model.Tags.ElementType(context.Background()) == nil {
 		t.Error("tags lost its element type, which makes the state unwritable")
+	}
+}
+
+// A check without sens reads as NodePing's default, 2 (checkattr.Sens), on an
+// import and on a refresh alike. A check imported before that holds null in
+// state, and its next refresh has to read 2, or a configuration that leaves
+// sens out plans to write it. Only an apply's answer without sens keeps the
+// planned value; see TestMapCheckToModelKeepsPlannedValuesTheAPIOmits.
+func TestMapCheckToModelReadsMissingSensAsDefault(t *testing.T) {
+	t.Parallel()
+
+	noSens := &client.Check{
+		ID:         "MOCK-1",
+		Type:       "HTTP",
+		Enabled:    "active",
+		Parameters: client.CheckParameters{Target: "https://example.com/", Threshold: float64(5)},
+	}
+
+	tests := []struct {
+		name  string
+		holds modelHolds
+		held  types.Int64
+	}{
+		{name: "import", holds: nothing, held: types.Int64Null()},
+		{name: "refresh of a null sens", holds: thePriorState, held: types.Int64Null()},
+		{name: "refresh of another sens", holds: thePriorState, held: types.Int64Value(3)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			model := CheckResourceModel{Sens: tt.held}
+			r := &CheckResource{}
+			var diags diag.Diagnostics
+			r.mapCheckToModel(context.Background(), noSens, &model, tt.holds, &diags)
+
+			if diags.HasError() {
+				t.Fatalf("mapping raised %v", diags.Errors())
+			}
+			if want := types.Int64Value(2); !model.Sens.Equal(want) {
+				t.Errorf("sens = %s, want %s", model.Sens, want)
+			}
+		})
 	}
 }
 

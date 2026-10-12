@@ -51,7 +51,8 @@ output "following_redirects" {
 - `public` - Whether the check has a public reports page.
 - `interval` - How often the check runs, in minutes.
 - `threshold` - Timeout in seconds for the check.
-- `sens` - Number of rechecks before the check is considered down.
+- `sens` - Number of rechecks before the check is considered down. A check
+  that holds none reads as `2`, NodePing's default.
 - `mute` - Whether notifications for this check are muted.
 - `autodiag` - Whether automatic diagnostics are enabled.
 - `dep` - ID of the check this one depends on for notifications.
