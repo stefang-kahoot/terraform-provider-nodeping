@@ -41,24 +41,35 @@ type ContactAddress struct {
 	// unreadablePriority is whether the address holds a priority that
 	// readPriority could not read, and read as none.
 	unreadablePriority bool
+	// retyped is what the address holds with another JSON type than the
+	// one it is read as; see readAction and readTextMap.
+	retyped retypedFields
 }
 
-// UnmarshalJSON decodes an address, reading its priority with readPriority
+// UnmarshalJSON decodes an address, reading its priority with readPriority,
+// its action with readAction, its headers and querystrings with readTextMap,
 // and its data with decodeAddressData. Decoded as a number, one address
 // holding "" or "abc" failed the read of its contact, and the list of every
-// contact in the account.
+// contact in the account; so did an action, or a header or query string
+// value, that is not a string.
 func (a *ContactAddress) UnmarshalJSON(data []byte) error {
 	// Plain has the fields of ContactAddress but not this method.
 	type Plain ContactAddress
 	decoded := struct {
 		*Plain
-		Priority json.RawMessage `json:"priority"`
-		Data     json.RawMessage `json:"data"`
+		Priority     json.RawMessage `json:"priority"`
+		Action       json.RawMessage `json:"action"`
+		Headers      json.RawMessage `json:"headers"`
+		QueryStrings json.RawMessage `json:"querystrings"`
+		Data         json.RawMessage `json:"data"`
 	}{Plain: (*Plain)(a)}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
 	a.Priority, a.unreadablePriority = readPriority(decoded.Priority)
+	a.Action, a.retyped.action = readAction(decoded.Action)
+	a.Headers, a.retyped.headers = readTextMap(decoded.Headers)
+	a.QueryStrings, a.retyped.queryStrings = readTextMap(decoded.QueryStrings)
 	var err error
 	a.Data, err = decodeAddressData(decoded.Data)
 	return err
