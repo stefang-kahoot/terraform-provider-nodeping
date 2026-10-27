@@ -43,7 +43,7 @@ tidy:
 
 # Pinned rather than :latest so a new linter release cannot fail a clean tree;
 # scripts/check-pins.sh flags it when upstream moves on.
-GOLANGCI_LINT_VERSION := v2.14.0
+GOLANGCI_LINT_VERSION := v2.15.0
 
 lint:
 	docker run --rm -v $(PWD):/app -w /app golangci/golangci-lint:$(GOLANGCI_LINT_VERSION) golangci-lint run
