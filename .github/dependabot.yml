@@ -13,7 +13,7 @@ updates:
       timezone: Europe/Berlin
     # Skip releases younger than a week: a compromised release is usually
     # yanked within days, and Dependabot would otherwise propose it within
-    # minutes. scripts/check-pins.sh uses the same window.
+    # minutes.
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5

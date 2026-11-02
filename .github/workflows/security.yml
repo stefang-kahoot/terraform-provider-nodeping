@@ -23,8 +23,9 @@ env:
   # cannot raise, and upload-sarif fails the job on the resulting 403. Those
   # runs still scan and still gate; they just don't publish to the Security tab.
   CAN_UPLOAD_SARIF: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]' }}
-  # Dependabot cannot see these two (it reads `uses:` only), so the pins job
-  # below flags them when upstream moves on.
+  # Dependabot cannot see these two (it reads `uses:` only), so they are bumped
+  # by hand. Trivy downloads its vulnerability database on every run, so an
+  # older binary still sees new advisories.
   GITLEAKS_VERSION: v8.30.1
   TRIVY_VERSION: 0.76.1
 
@@ -154,21 +155,3 @@ jobs:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
-
-  # Tool versions pinned outside any manifest Dependabot reads. Lives here, not
-  # in ci.yml, because ci.yml also gates releases and an upstream release must
-  # not block a tag. Keep it out of the required checks for the same reason.
-  pins:
-    name: Tool pins are current
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: check-pins.sh
-        env:
-          # Lifts the GitHub API limit from 60 to 1000 requests an hour.
-          GITHUB_TOKEN: ${{ github.token }}
-        run: ./scripts/check-pins.sh

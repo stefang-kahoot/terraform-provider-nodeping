@@ -42,7 +42,7 @@ tidy:
 	docker run --rm -v $(PWD):/app -w /app golang:$(GO_VERSION)-alpine sh -c "go mod tidy"
 
 # Pinned rather than :latest so a new linter release cannot fail a clean tree;
-# scripts/check-pins.sh flags it when upstream moves on.
+# ci.yml pins it too, and scripts/check-pins.sh keeps the two in step.
 GOLANGCI_LINT_VERSION := v2.15.0
 
 lint:
