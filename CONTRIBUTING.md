@@ -79,7 +79,7 @@ Pull requests into `main` must pass these 10 checks:
 
 | Check | What it does |
 |-------|--------------|
-| `ci / Build & vet` | `go build`, `go mod tidy` is a no-op, README version table is current |
+| `ci / Build & vet` | `go build`, `go mod tidy` is a no-op, README version table is current, duplicated tool pins agree |
 | `ci / golangci-lint` | golangci-lint with `.golangci.yml` (includes vet and gofmt) |
 | `ci / Workflow lint` | actionlint and zizmor over the workflows |
 | `ci / Unit tests` | `go test -race ./...` with coverage |
@@ -90,13 +90,8 @@ Pull requests into `main` must pass these 10 checks:
 | `Trivy (vulnerabilities, misconfig, secrets)` | fails on high or critical findings |
 | `Dependency review` | fails on newly added dependencies with high or critical advisories |
 
-Other checks are informational and don't block a merge:
-
-- **Tool pins are current** (`scripts/check-pins.sh`) fails when a tool pinned
-  outside a Dependabot-managed manifest falls behind upstream. An upstream
-  release is not a problem with your change, so ignore it unless your PR touches
-  those pins.
-- **CodeQL** runs on pushes to `main` and weekly, not on pull requests.
+**CodeQL** is informational and doesn't block a merge. It runs on pushes to
+`main` and weekly, not on pull requests.
 
 The `main` ruleset requires no approving review, since there is only one
 maintainer. Merging is still the maintainer's call.

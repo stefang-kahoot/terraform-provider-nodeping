@@ -11,9 +11,9 @@ permissions:
 
 env:
   GO_VERSION: '1.27'
-  # Dependabot reads `uses:` only, so these three are invisible to it.
-  # scripts/check-pins.sh flags them when upstream moves on, and fails if
-  # GOLANGCI_LINT_VERSION drifts from the Makefile's.
+  # Dependabot reads `uses:` only, so these three are bumped by hand.
+  # scripts/check-pins.sh fails if GOLANGCI_LINT_VERSION drifts from the
+  # Makefile's.
   GOLANGCI_LINT_VERSION: v2.15.0
   ACTIONLINT_VERSION: 1.7.12
   ZIZMOR_VERSION: 1.31.1
@@ -49,6 +49,10 @@ jobs:
       # stale version table into a failing check instead of silent drift.
       - name: README version table is current
         run: ./scripts/sync-readme-versions.sh --check
+
+      # goreleaser and golangci-lint are each pinned in two files.
+      - name: Duplicated tool pins agree
+        run: ./scripts/check-pins.sh
 
   # Also covers gofmt and go vet, which used to be steps in the build job.
   # Configuration lives in .golangci.yml.
